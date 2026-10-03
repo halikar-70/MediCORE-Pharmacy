@@ -1,0 +1,13 @@
+# Logs and temporary files
+storage/logs/*.log
+*.log
+cookies.txt
+
+# Test artifacts
+testsprite_tests/tmp/
+
+# IDE and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

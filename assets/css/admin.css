@@ -1,0 +1,24 @@
+/* assets/css/admin.css */
+.settings-tab .nav-link {
+    color: var(--text-muted);
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    padding: 0.4rem 0.85rem;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.settings-tab .nav-link:hover {
+    background: var(--bg-light);
+    color: var(--text-main);
+}
+
+.settings-tab .nav-link.active {
+    background: var(--primary);
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.log-row {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}

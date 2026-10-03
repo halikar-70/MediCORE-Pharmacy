@@ -1,0 +1,382 @@
+/* ==========================================================================
+   assets/css/dashboard.css
+   Vatsalya Pharmacy Management System — Clinical Operations Dashboard Styles
+   Compact, High-Density, Fast-Scanning UI for Hospital Pharmacists
+   ========================================================================== */
+
+/* Top KPI Cards */
+.kpi-card {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 98px;
+    position: relative;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpi-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.kpi-clickable {
+    cursor: pointer;
+}
+
+.kpi-clickable:hover {
+    border-color: var(--primary);
+    background-color: #fafbfc;
+}
+
+.kpi-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kpi-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.15;
+    margin: 0.25rem 0 0.15rem 0;
+    font-family: var(--font-mono);
+}
+
+.kpi-sub {
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kpi-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.kpi-status-dot.dot-emerald { background-color: var(--primary); }
+.kpi-status-dot.dot-amber { background-color: var(--warning); }
+.kpi-status-dot.dot-red { background-color: var(--danger); }
+.kpi-status-dot.dot-blue { background-color: var(--info); }
+.kpi-status-dot.dot-neutral { background-color: var(--text-muted); }
+
+/* Operational Channels (OPD & IPD) */
+.ops-channel-card {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+    position: relative;
+    border-top-width: 3px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.ops-channel-card.channel-opd {
+    border-top-color: var(--primary);
+}
+
+.ops-channel-card.channel-ipd {
+    border-top-color: #2563eb;
+}
+
+.ops-channel-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.25rem;
+    padding-bottom: 0.85rem;
+}
+
+.ops-channel-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ops-channel-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.ops-channel-amount {
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    line-height: 1.2;
+}
+
+.ops-channel-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.85rem 1.4rem;
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    font-weight: 700;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    flex-shrink: 0;
+    cursor: pointer;
+    min-height: 58px;
+}
+
+.ops-channel-cta-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+
+.ops-channel-cta-btn .cta-icon-wrapper {
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.ops-channel-cta-btn .cta-text-wrapper {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+
+.ops-channel-cta-btn .cta-title {
+    font-size: 1.025rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+}
+
+.ops-channel-cta-btn .cta-subtitle {
+    font-size: 0.75rem;
+    font-weight: 500;
+    opacity: 0.9;
+    line-height: 1.2;
+    margin-top: 2px;
+}
+
+.ops-channel-cta-btn .cta-arrow {
+    font-size: 1.15rem;
+    margin-left: 0.25rem;
+    transition: transform 0.15s ease;
+}
+
+.ops-channel-cta-btn:hover .cta-arrow {
+    transform: translateX(3px);
+}
+
+.ops-channel-cta-btn.btn-opd-cta {
+    background: #059669;
+    color: #ffffff;
+    border: 1px solid #047857;
+}
+
+.ops-channel-cta-btn.btn-opd-cta:hover {
+    background: #047857;
+    color: #ffffff;
+}
+
+.ops-channel-cta-btn.btn-ipd-cta {
+    background: #2563eb;
+    color: #ffffff;
+    border: 1px solid #1d4ed8;
+}
+
+.ops-channel-cta-btn.btn-ipd-cta:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+}
+
+.ops-channel-footer {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.825rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 576px) {
+    .ops-channel-body {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ops-channel-cta-btn {
+        justify-content: center;
+        width: 100%;
+        margin-top: 0.5rem;
+    }
+}
+
+/* Operational Queue List */
+.queue-list-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.queue-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.84rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: background-color 0.12s ease;
+}
+
+.queue-list-item:last-child {
+    border-bottom: none;
+}
+
+.queue-list-item:hover {
+    background-color: var(--surface-muted);
+    color: var(--text-primary);
+}
+
+/* Procurement & Inventory Summary Grid */
+.procure-metric-tile {
+    background: var(--surface-muted, #f8fafc);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.15s ease-in-out;
+}
+
+.procure-metric-tile:hover {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.procure-metric-label {
+    font-size: 0.775rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.35rem;
+}
+
+.procure-metric-label i {
+    font-size: 1rem;
+}
+
+.procure-metric-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-bottom: 0.35rem;
+}
+
+.procure-metric-sub {
+    font-size: 0.725rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Empty State Widget */
+.empty-state-box {
+    padding: 2.25rem 1.5rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.empty-state-icon {
+    font-size: 2.2rem;
+    color: var(--border-strong);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.empty-state-desc {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    max-width: 320px;
+    margin: 0 auto;
+}
+
+/* Date Range Pill */
+.date-pill-btn {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    padding: 0.35rem 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.date-pill-btn:hover, .date-pill-btn:focus {
+    border-color: var(--border-strong);
+    background-color: var(--surface-muted);
+    color: var(--text-primary);
+}
+
+/* Responsive Overrides */
+@media (max-width: 767.98px) {
+    .kpi-card {
+        min-height: auto;
+        padding: 0.75rem 0.85rem;
+    }
+    .kpi-value {
+        font-size: 1.25rem;
+    }
+    .ops-channel-card {
+        padding: 0.9rem 1rem;
+    }
+    .ops-channel-amount {
+        font-size: 1.3rem;
+    }
+}
