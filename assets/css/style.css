@@ -1661,6 +1661,7 @@ body {
    15. 90% BROWSER ZOOM & HIGH-DENSITY VIEWPORT OPTIMIZATIONS
    -------------------------------------------------------------------------- */
 @media screen and (min-width: 993px) {
+
     /* Optimize container scaling and prevent awkward stretching */
     .container-fluid {
         max-width: 1720px;

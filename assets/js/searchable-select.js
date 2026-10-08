@@ -774,7 +774,7 @@
     window.initializeSearchableSelects = function(root) {
         root = root || document.body;
         root.querySelectorAll('select').forEach(function(select) {
-            if (select.id === 'catalogStockFilterSelect') {
+            if (select.id === 'catalogStockFilterSelect' || select.id === 'modalBillFormat') {
                 return;
             }
             if (select.dataset.noSearch === "true" || select.classList.contains('no-search') ||

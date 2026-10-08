@@ -21,6 +21,57 @@ $error = null;
 $success = null;
 $completedSale = null;
 
+// AJAX Handler for Updating IPD Admission Type (e.g., Cashless <-> Normal / Paid)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_admission_type') {
+    header('Content-Type: application/json');
+    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'message' => 'Invalid or expired security token.']);
+        exit;
+    }
+
+    $admissionId = (int)($_POST['admission_id'] ?? 0);
+    $hospitalPatientId = (int)($_POST['hospital_patient_id'] ?? 0);
+    $hospitalUhid = trim($_POST['hospital_uhid'] ?? '');
+    $ipdAdmissionNo = trim($_POST['ipd_admission_no'] ?? '');
+    $newType = trim($_POST['admission_type'] ?? 'Paid');
+    $isMediclaim = (stripos($newType, 'cashless') !== false || stripos($newType, 'tpa') !== false || stripos($newType, 'insurance') !== false) ? 'Yes' : 'No';
+
+    try {
+        $hospitalPdo = \Pharmacy\Database\Database::getHospitalConnection();
+        if ($hospitalPdo) {
+            if ($admissionId > 0) {
+                $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE admission_id = ?");
+                $upStmt->execute([$newType, $isMediclaim, $admissionId]);
+            } else if (!empty($ipdAdmissionNo)) {
+                $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE ipd_number = ?");
+                $upStmt->execute([$newType, $isMediclaim, $ipdAdmissionNo]);
+            } else if ($hospitalPatientId > 0) {
+                $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE patient_id = ? AND status = 'Admitted' ORDER BY admission_id DESC LIMIT 1");
+                $upStmt->execute([$newType, $isMediclaim, $hospitalPatientId]);
+            } else if (!empty($hospitalUhid)) {
+                $upStmt = $hospitalPdo->prepare("
+                    UPDATE admissions a 
+                    JOIN patients p ON a.patient_id = p.patient_id 
+                    SET a.admission_type = ?, a.is_mediclaim = ? 
+                    WHERE p.patient_code = ? AND a.status = 'Admitted'
+                ");
+                $upStmt->execute([$newType, $isMediclaim, $hospitalUhid]);
+            }
+        }
+
+        echo json_encode([
+            'success' => true,
+            'message' => "Patient classification switched to {$newType} successfully!",
+            'admission_type' => $newType,
+            'is_mediclaim' => $isMediclaim
+        ]);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Failed to update admission type: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 // AJAX Handler for Instant IPD Patient Registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'quick_ipd_register') {
     header('Content-Type: application/json');
@@ -125,12 +176,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $ipdWard = trim($_POST['ipd_ward'] ?? '');
             $ipdBed = trim($_POST['ipd_bed'] ?? '');
             $doctorName = trim($_POST['doctor_name'] ?? '');
+            $admissionType = trim($_POST['admission_type'] ?? '');
+            $billFormat = trim($_POST['bill_format'] ?? 'ipd_detailed');
             $paymentMode = trim($_POST['payment_mode'] ?? 'CREDIT');
             $paidAmount = (float)($_POST['paid_amount'] ?? 0.0);
             $notes = trim($_POST['notes'] ?? '');
             $discountType = strtoupper(trim($_POST['discount_type'] ?? 'PERCENT'));
             $discountVal = max(0.0, (float)($_POST['discount_value'] ?? 0.0));
             $discountPercent = 0.0;
+
+            if (empty($billFormat)) {
+                $billFormat = 'ipd_detailed';
+            }
 
             if ($customerName === '') {
                 throw new Exception("Please search and select an inpatient or enter the patient name.");
@@ -253,6 +310,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 has_permission('pharmacy.discount.override')
             );
 
+            if ($completedSale) {
+                $completedSale['bill_format'] = $billFormat;
+                $completedSale['admission_type'] = $admissionType;
+            }
+
             $success = "IPD Sale #{$completedSale['sale_number']} charged successfully to {$customerName}!";
         } catch (Exception $e) {
             $error = $e->getMessage();
@@ -361,6 +423,7 @@ try {
                 'ipd_admission_no'   => $ipdNo,
                 'admission_date'     => $admDateFormatted,
                 'admission_type'     => $admType,
+                'is_mediclaim'       => $hp['is_mediclaim'] ?? 'No',
                 'referred_by'        => $hp['referred_by'] ?: 'Self',
                 'diagnosis'          => $hp['diagnosis'] ?: 'Inpatient Care',
                 'ipd_ward'           => $hp['ipd_ward'] ?: 'General Ward',
@@ -843,19 +906,33 @@ include __DIR__ . '/../../includes/navbar.php';
                     <div class="small text-muted">Inpatient dispensing completed. Choose a bill format below:</div>
                 </div>
             </div>
-            <?php if ($completedSale): ?>
+            <?php if ($completedSale): 
+                $cFormat = $completedSale['bill_format'] ?? 'ipd_detailed';
+                $cAdmType = strtolower($completedSale['admission_type'] ?? '');
+                $cIsCashless = (strpos($cAdmType, 'cashless') !== false || strpos($cAdmType, 'tpa') !== false || strpos($cAdmType, 'insurance') !== false);
+                $cSaleId = (int)$completedSale['sale_id'];
+            ?>
                 <div class="d-flex align-items-center gap-2">
-                    <a href="invoice.php?id=<?= $completedSale['sale_id'] ?>&format=standard&autoprint=1" target="_blank" class="btn btn-sm btn-primary fw-bold text-white shadow-sm px-3 py-1.5 d-inline-flex align-items-center gap-1">
+                    <a href="invoice.php?id=<?= $cSaleId ?>&format=standard&autoprint=1" target="_blank" class="btn btn-sm btn-primary fw-bold text-white shadow-sm px-3 py-1.5 d-inline-flex align-items-center gap-1">
                         <i class="ti ti-printer"></i> Print Retail Bill
                     </a>
-                    <a href="invoice.php?id=<?= $completedSale['sale_id'] ?>&format=ipd_detailed&autoprint=1" target="_blank" class="btn btn-sm btn-dark fw-bold text-white shadow-sm px-3 py-1.5 d-inline-flex align-items-center gap-1">
-                        <i class="ti ti-file-text"></i> Print Detailed Bill (PDF Format)
+                    <a href="invoice.php?id=<?= $cSaleId ?>&format=ipd_detailed&autoprint=1" target="_blank" class="btn btn-sm btn-dark fw-bold text-white shadow-sm px-3 py-1.5 d-inline-flex align-items-center gap-1">
+                        <i class="ti ti-file-text"></i> Print Inpatient Bill (PDF)
+                    </a>
+                    <a href="invoice.php?id=<?= $cSaleId ?>&format=both&autoprint=1" target="_blank" class="btn btn-sm fw-bold text-white shadow-sm px-3 py-1.5 d-inline-flex align-items-center gap-1" style="background-color: #0284c7; border-color: #0284c7;">
+                        <i class="ti ti-files"></i> Print Both
                     </a>
                     <a href="regular.php" class="btn btn-sm btn-outline-secondary px-3 py-1.5">Next IPD Dispense</a>
                 </div>
                 <script>
                     document.addEventListener('DOMContentLoaded', function() {
-                        const printWin = window.open('invoice.php?id=<?= (int)$completedSale['sale_id'] ?>&format=ipd_detailed&autoprint=1', '_blank');
+                        <?php if ($cFormat === 'standard'): ?>
+                            window.open('invoice.php?id=<?= $cSaleId ?>&format=standard&autoprint=1', '_blank');
+                        <?php elseif ($cFormat === 'both'): ?>
+                            window.open('invoice.php?id=<?= $cSaleId ?>&format=both&autoprint=1', '_blank');
+                        <?php else: ?>
+                            window.open('invoice.php?id=<?= $cSaleId ?>&format=ipd_detailed&autoprint=1', '_blank');
+                        <?php endif; ?>
                     });
                 </script>
             <?php endif; ?>
@@ -999,6 +1076,8 @@ include __DIR__ . '/../../includes/navbar.php';
                     <input type="hidden" name="ipd_ward" id="inpIpdWard" value="">
                     <input type="hidden" name="ipd_bed" id="inpIpdBed" value="">
                     <input type="hidden" name="doctor_name" id="inpDoctorName" value="">
+                    <input type="hidden" name="admission_type" id="inpAdmissionType" value="">
+                    <input type="hidden" name="bill_format" id="hiddenBillFormat" value="ipd_detailed">
                     <input type="hidden" name="discount_type" id="hiddenDiscountType" value="PERCENT">
                     <input type="hidden" name="discount_percent" id="hiddenDiscountPercent" value="0.0">
                     <input type="hidden" name="discount_value" id="hiddenDiscountValue" value="0.0">
@@ -1017,6 +1096,23 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <div class="d-flex align-items-center gap-2 flex-wrap">
                                         <h5 class="fw-bold text-dark mb-0 fs-6" id="cardPatientName">-</h5>
                                         <span class="badge bg-primary text-white fw-bold px-2 py-0.5" style="font-size: 0.70rem;"><i class="bi bi-check-circle-fill me-1"></i>Selected Inpatient</span>
+                                        <div class="dropdown d-inline-block">
+                                            <button class="btn btn-xs badge badge-type-paid dropdown-toggle border shadow-2xs d-inline-flex align-items-center gap-1" 
+                                                    id="cardAdmissionTypeBadge" 
+                                                    type="button" 
+                                                    data-bs-toggle="dropdown" 
+                                                    aria-expanded="false" 
+                                                    style="font-size: 0.72rem; padding: 4px 8px; cursor: pointer;"
+                                                    title="Click to switch between Cashless and Normal/Retail">
+                                                <span id="cardAdmissionTypeText">Paid</span> <i class="bi bi-chevron-down opacity-75" style="font-size: 0.65rem;"></i>
+                                            </button>
+                                            <ul class="dropdown-menu shadow-sm border p-1" style="font-size: 0.78rem; min-width: 185px; border-radius: 8px; z-index: 1060;">
+                                                <li><div class="dropdown-header px-2 py-1 text-uppercase fw-bold text-muted" style="font-size: 0.65rem;">Switch Classification</div></li>
+                                                <li><a class="dropdown-item rounded-1 d-flex align-items-center gap-2 px-2 py-1.5" href="javascript:void(0)" onclick="changeCurrentSelectedPatientAdmissionType('Paid')"><i class="bi bi-cash-stack text-success"></i> Normal / Retail (Paid)</a></li>
+                                                <li><a class="dropdown-item rounded-1 d-flex align-items-center gap-2 px-2 py-1.5" href="javascript:void(0)" onclick="changeCurrentSelectedPatientAdmissionType('Cashless')"><i class="bi bi-shield-lock-fill text-danger"></i> Cashless (TPA)</a></li>
+                                                <li><a class="dropdown-item rounded-1 d-flex align-items-center gap-2 px-2 py-1.5" href="javascript:void(0)" onclick="changeCurrentSelectedPatientAdmissionType('Paid-R')"><i class="bi bi-receipt text-primary"></i> Paid-R</a></li>
+                                            </ul>
+                                        </div>
                                     </div>
                                     <div class="text-muted small mt-0.5" style="font-size: 0.76rem;" id="cardPatientMeta">UHID: - &bull; Phone: -</div>
                                 </div>
@@ -1372,7 +1468,7 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span>Bill Type</span>
                         </div>
                         <div class="mt-1 d-flex align-items-center">
-                            <span class="badge rounded-pill fw-bold d-inline-flex align-items-center" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 0.74rem; padding: 3px 8px;">
+                            <span id="modalBillTypeBadge" class="badge rounded-pill fw-bold d-inline-flex align-items-center" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 0.74rem; padding: 3px 8px;">
                                 <i class="bi bi-check2" style="margin-right: 4px;"></i> IPD Credit Folio
                             </span>
                         </div>
@@ -1516,23 +1612,29 @@ include __DIR__ . '/../../includes/navbar.php';
 
             <!-- Modal Action Footer: Clean Harmonious Single-Line -->
             <div class="modal-footer py-2.5 px-3.5 bg-white border-top d-flex justify-content-between align-items-center flex-nowrap w-100" style="flex-wrap: nowrap !important; box-sizing: border-box;">
-                <button type="button" class="btn btn-light border text-secondary text-nowrap px-3 py-1.5 fw-semibold d-inline-flex align-items-center justify-content-center rounded-3 shadow-2xs" style="font-size: 0.84rem;" data-bs-dismiss="modal">
+                <button type="button" class="btn btn-light border text-secondary text-nowrap px-3 py-2 fw-semibold d-inline-flex align-items-center justify-content-center rounded-3 shadow-2xs" style="font-size: 0.85rem;" data-bs-dismiss="modal">
                     <i class="bi bi-arrow-left" style="margin-right: 6px; font-size: 0.95rem;"></i>
                     <span>Back to Edit</span>
                 </button>
-                <div class="d-flex align-items-center flex-nowrap" style="gap: 8px; flex-wrap: nowrap !important;">
-                    <button type="button" class="btn text-nowrap px-3 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-3 shadow-2xs" style="background-color: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; font-size: 0.84rem;" onclick="previewCurrentBill('standard')">
-                        <i class="bi bi-printer" style="margin-right: 6px; font-size: 0.95rem;"></i>
-                        <span>Retail Bill</span>
+                <div class="d-flex align-items-center flex-nowrap" style="gap: 10px; flex-wrap: nowrap !important;">
+                    <div class="d-flex align-items-center gap-1.5 px-2 py-1 rounded-3 border bg-light shadow-2xs" style="border-color: #cbd5e1 !important;">
+                        <span class="text-secondary fw-bold px-1 d-none d-sm-inline" style="font-size: 0.80rem;">
+                            <i class="bi bi-printer-fill text-primary me-1"></i>Format:
+                        </span>
+                        <select id="modalBillFormat" class="form-select form-select-sm fw-bold border bg-white shadow-xs text-dark no-search" data-no-search="true" style="height: 34px; width: auto; min-width: 195px; font-size: 0.84rem; border-radius: 6px; border-color: #94a3b8; cursor: pointer;" onchange="onModalBillFormatChange(this.value)">
+                            <option value="ipd_detailed" selected>Inpatient Bill (PDF)</option>
+                            <option value="standard">Retail Bill (GST)</option>
+                            <option value="both">Both (Inpatient &amp; Retail)</option>
+                        </select>
+                    </div>
+                    <button type="button" id="modalBtnPreviewChoice" class="btn text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-3 shadow-2xs" style="background-color: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; font-size: 0.85rem; height: 38px;" onclick="previewSelectedBillFormat()">
+                        <i class="bi bi-eye-fill" style="margin-right: 6px; font-size: 0.95rem;"></i>
+                        <span>Preview</span>
                     </button>
-                    <button type="button" class="btn text-nowrap px-3 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-3 shadow-2xs" style="background-color: #f8fafc; color: #334155; border: 1px solid #cbd5e1; font-size: 0.84rem;" onclick="previewCurrentBill('ipd_detailed')">
-                        <i class="bi bi-file-earmark-text" style="margin-right: 6px; font-size: 0.95rem;"></i>
-                        <span>Inpatient Bill (PDF)</span>
-                    </button>
-                    <button type="button" id="modalBtnConfirmSale" class="btn btn-primary text-white text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-2 shadow-xs" style="font-size: 0.86rem;" onclick="submitFinalSale()">
-                        <i class="bi bi-check-lg" style="margin-right: 6px; font-size: 1.1rem;"></i>
+                    <button type="button" id="modalBtnConfirmSale" class="btn btn-primary text-white text-nowrap px-4 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-3 shadow-sm" style="font-size: 0.88rem; height: 38px;" onclick="submitFinalSale()">
+                        <i class="bi bi-check2-circle" style="margin-right: 6px; font-size: 1.15rem;"></i>
                         <span>Confirm &amp; Dispense</span>
-                        <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 5px; border-radius: 4px; font-weight: 700;">F9</kbd>
+                        <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-weight: 700;">F9</kbd>
                     </button>
                 </div>
             </div>
@@ -1731,11 +1833,15 @@ function renderAdmittedPatientsTable(patients) {
     patients.forEach((p, idx) => {
         let typeClass = 'badge-type-paid';
         const typeStr = (p.admission_type || '').toLowerCase();
-        if (typeStr.includes('cashless')) {
+        const isCashless = typeStr.includes('cashless') || typeStr.includes('tpa') || typeStr.includes('insurance') || ((p.is_mediclaim || '').toLowerCase() === 'yes');
+        const isPaidR = typeStr.includes('paid r') || typeStr.includes('paid-r');
+        if (isCashless) {
             typeClass = 'badge-type-cashless';
-        } else if (typeStr.includes('paid r') || typeStr.includes('paid-r')) {
+        } else if (isPaidR) {
             typeClass = 'badge-type-paidr';
         }
+
+        const displayType = p.admission_type || (isCashless ? 'Cashless' : 'Paid');
 
         const highlightedName = highlightIpdMatch(p.name, searchVal);
         const highlightedIpd = highlightIpdMatch(p.ipd_admission_no, searchVal);
@@ -1754,8 +1860,44 @@ function renderAdmittedPatientsTable(patients) {
                     <div class="fw-bold text-dark" style="font-size: 0.88rem;">${highlightedName}</div>
                     ${highlightedUhid ? `<div class="small text-muted font-monospace" style="font-size: 0.70rem;">${highlightedUhid}</div>` : ''}
                 </td>
-                <td>
-                    <span class="badge ${typeClass}" style="font-size: 0.72rem; padding: 4px 8px;">${escapeHtml(p.admission_type || 'Paid')}</span>
+                <td onclick="event.stopPropagation()">
+                    <div class="dropdown d-inline-block">
+                        <button class="btn btn-xs badge ${typeClass} dropdown-toggle border shadow-2xs d-inline-flex align-items-center gap-1" 
+                                type="button" 
+                                data-bs-toggle="dropdown" 
+                                aria-expanded="false" 
+                                style="font-size: 0.74rem; padding: 4px 8px; cursor: pointer;"
+                                title="Click to switch between Cashless and Normal/Retail">
+                            <span>${escapeHtml(displayType)}</span> <i class="bi bi-chevron-down opacity-75" style="font-size: 0.65rem;"></i>
+                        </button>
+                        <ul class="dropdown-menu shadow-sm border p-1" style="font-size: 0.78rem; min-width: 185px; border-radius: 8px; z-index: 1050;">
+                            <li><div class="dropdown-header px-2 py-1 text-uppercase fw-bold text-muted" style="font-size: 0.65rem;">Switch Classification</div></li>
+                            <li>
+                                <a class="dropdown-item rounded-1 d-flex align-items-center justify-content-between px-2 py-1.5 ${(!isCashless && !isPaidR) ? 'active fw-bold' : ''}" 
+                                   href="javascript:void(0)" 
+                                   onclick="changePatientAdmissionType(${idx}, 'Paid')">
+                                    <span><i class="bi bi-cash-stack text-success me-1.5"></i>Normal / Retail (Paid)</span>
+                                    ${(!isCashless && !isPaidR) ? '<i class="bi bi-check2"></i>' : ''}
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item rounded-1 d-flex align-items-center justify-content-between px-2 py-1.5 ${isCashless ? 'active fw-bold' : ''}" 
+                                   href="javascript:void(0)" 
+                                   onclick="changePatientAdmissionType(${idx}, 'Cashless')">
+                                    <span><i class="bi bi-shield-lock-fill text-danger me-1.5"></i>Cashless (TPA)</span>
+                                    ${isCashless ? '<i class="bi bi-check2"></i>' : ''}
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item rounded-1 d-flex align-items-center justify-content-between px-2 py-1.5 ${isPaidR ? 'active fw-bold' : ''}" 
+                                   href="javascript:void(0)" 
+                                   onclick="changePatientAdmissionType(${idx}, 'Paid-R')">
+                                    <span><i class="bi bi-receipt text-primary me-1.5"></i>Paid-R</span>
+                                    ${isPaidR ? '<i class="bi bi-check2"></i>' : ''}
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 </td>
                 <td class="text-dark fw-semibold" style="font-size: 0.84rem;">
                     ${highlightedDoc}
@@ -1781,6 +1923,59 @@ function renderAdmittedPatientsTable(patients) {
     });
 
     tbody.innerHTML = html;
+}
+
+function changePatientAdmissionType(idx, newType) {
+    const p = (currentFilteredPatients && currentFilteredPatients[idx]) ? currentFilteredPatients[idx] : ipdPatientsList[idx];
+    if (!p) return;
+
+    const oldType = p.admission_type || 'Paid';
+    p.admission_type = newType;
+    p.is_mediclaim = (newType === 'Cashless') ? 'Yes' : 'No';
+
+    // Also sync in master ipdPatientsList
+    const masterP = ipdPatientsList.find(x => (x.admission_id && x.admission_id === p.admission_id) || (x.hospital_uhid && x.hospital_uhid === p.hospital_uhid));
+    if (masterP) {
+        masterP.admission_type = newType;
+        masterP.is_mediclaim = p.is_mediclaim;
+    }
+
+    // If this patient is currently selected in dispense view, update hidden input & top card
+    const selectedUhid = document.getElementById('inpHospitalUhid')?.value;
+    const selectedIpdNo = document.getElementById('inpIpdAdmissionNo')?.value;
+    if ((p.hospital_uhid && selectedUhid === p.hospital_uhid) || (p.ipd_admission_no && selectedIpdNo === p.ipd_admission_no)) {
+        if (document.getElementById('inpAdmissionType')) {
+            document.getElementById('inpAdmissionType').value = newType;
+        }
+        updateCardAdmissionTypeDisplay(newType);
+    }
+
+    // Re-render table
+    renderAdmittedPatientsTable(currentFilteredPatients && currentFilteredPatients.length > 0 ? currentFilteredPatients : ipdPatientsList);
+
+    showAutoAddNotice(`Changed ${p.name}'s classification to "${newType}"`, 'success');
+
+    // Send AJAX to server
+    const fd = new FormData();
+    fd.append('action', 'update_admission_type');
+    fd.append('csrf_token', '<?= generate_csrf_token() ?>');
+    fd.append('admission_id', p.admission_id || 0);
+    fd.append('hospital_patient_id', p.hospital_patient_id || 0);
+    fd.append('hospital_uhid', p.hospital_uhid || '');
+    fd.append('ipd_admission_no', p.ipd_admission_no || '');
+    fd.append('admission_type', newType);
+
+    fetch(window.location.href, {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            console.warn('Admission update notice:', res.message);
+        }
+    })
+    .catch(e => console.error('Error syncing admission type:', e));
 }
 
 function filterPatientsTable() {
@@ -1872,6 +2067,7 @@ function selectPatient(p) {
     if (document.getElementById('inpIpdWard')) document.getElementById('inpIpdWard').value = p.ipd_ward || '';
     if (document.getElementById('inpIpdBed')) document.getElementById('inpIpdBed').value = p.ipd_bed || '';
     if (document.getElementById('inpDoctorName')) document.getElementById('inpDoctorName').value = p.doctor_name || '';
+    if (document.getElementById('inpAdmissionType')) document.getElementById('inpAdmissionType').value = p.admission_type || '';
 
     // Set display inputs
     if (document.getElementById('displayIpdAdmissionNo')) document.getElementById('displayIpdAdmissionNo').value = p.ipd_admission_no || '';
@@ -1886,6 +2082,9 @@ function selectPatient(p) {
     if (avatarEl) avatarEl.textContent = (p.name || 'P').trim().charAt(0).toUpperCase();
     const metaEl = document.getElementById('cardPatientMeta');
     if (metaEl) metaEl.textContent = `UHID: ${p.hospital_uhid || 'IPD'} • Phone: ${p.mobile || 'N/A'}`;
+
+    // Update Top Card Admission Type Badge
+    updateCardAdmissionTypeDisplay(p.admission_type || 'Paid');
 
     // Sync hidden select if exists
     const select = document.getElementById('ipdPatientSelect');
@@ -1906,6 +2105,35 @@ function selectPatient(p) {
             medInput.select();
         }
     }, 150);
+}
+
+function updateCardAdmissionTypeDisplay(admType) {
+    const badgeEl = document.getElementById('cardAdmissionTypeBadge');
+    const textEl = document.getElementById('cardAdmissionTypeText');
+    if (!badgeEl || !textEl) return;
+    const isCashless = (admType || '').toLowerCase().includes('cashless') || (admType || '').toLowerCase().includes('tpa') || (admType || '').toLowerCase().includes('insurance');
+    const isPaidR = (admType || '').toLowerCase().includes('paid r') || (admType || '').toLowerCase().includes('paid-r');
+    let cls = 'badge-type-paid';
+    if (isCashless) cls = 'badge-type-cashless';
+    else if (isPaidR) cls = 'badge-type-paidr';
+
+    textEl.textContent = admType || 'Paid';
+    badgeEl.className = `btn btn-xs badge ${cls} dropdown-toggle border shadow-2xs d-inline-flex align-items-center gap-1`;
+}
+
+function changeCurrentSelectedPatientAdmissionType(newType) {
+    const curUhid = document.getElementById('inpHospitalUhid')?.value;
+    const curIpdNo = document.getElementById('inpIpdAdmissionNo')?.value;
+    const idx = ipdPatientsList.findIndex(x => (curUhid && x.hospital_uhid === curUhid) || (curIpdNo && x.ipd_admission_no === curIpdNo));
+    if (idx !== -1) {
+        changePatientAdmissionType(idx, newType);
+    } else {
+        if (document.getElementById('inpAdmissionType')) {
+            document.getElementById('inpAdmissionType').value = newType;
+        }
+        updateCardAdmissionTypeDisplay(newType);
+        showAutoAddNotice(`Patient classification switched to ${newType}`, 'success');
+    }
 }
 
 function openDispenseForPatient(patientId) {
@@ -2922,6 +3150,7 @@ function selectMedicineSuggestion(medicineId) {
     let batchNumber = med.batch_number || 'GEN-01';
     let batchId = med.batch_id || 0;
     let expiry = med.expiry_date || 'N/A';
+    let mfgDate = med.manufacturing_date || '2026-06-01';
     let mfgRate = parseFloat(med.purchase_price || 0);
     let price = parseFloat(med.mrp || med.price || 0);
     let maxStock = parseInt(med.available_stock || med.stock_quantity || 999);
@@ -2932,6 +3161,9 @@ function selectMedicineSuggestion(medicineId) {
             batchNumber = availableBatch.batch_number;
             batchId = availableBatch.batch_id;
             expiry = availableBatch.expiry_date;
+            if (availableBatch.manufacturing_date) {
+                mfgDate = availableBatch.manufacturing_date;
+            }
             mfgRate = parseFloat(availableBatch.purchase_price || 0);
             price = parseFloat(availableBatch.sale_price || med.mrp || 0);
             maxStock = parseInt(availableBatch.stock || 0);
@@ -2967,6 +3199,7 @@ function selectMedicineSuggestion(medicineId) {
             batch_id: batchId,
             batch_number: batchNumber,
             manufacturer: manufacturer,
+            manufacturing_date: mfgDate,
             expiry_date: expiry,
             purchase_price: mfgRate,
             category: category,
@@ -3663,6 +3896,31 @@ function openBillingPreviewModal() {
 
     recalcModalTotals();
 
+    // Check if patient is Cashless / TPA
+    const admType = (document.getElementById('inpAdmissionType')?.value || '').toLowerCase();
+    const isCashless = admType.includes('cashless') || admType.includes('tpa') || admType.includes('insurance');
+
+    const billTypeBadge = document.getElementById('modalBillTypeBadge');
+    if (billTypeBadge) {
+        if (isCashless) {
+            billTypeBadge.className = 'badge rounded-pill fw-bold d-inline-flex align-items-center badge-type-cashless';
+            billTypeBadge.innerHTML = '<i class="bi bi-shield-lock-fill me-1"></i> Cashless IPD Folio';
+        } else {
+            billTypeBadge.className = 'badge rounded-pill fw-bold d-inline-flex align-items-center badge-type-paid';
+            billTypeBadge.innerHTML = '<i class="bi bi-check2 me-1"></i> Regular IPD Folio';
+        }
+    }
+
+    const formatSelect = document.getElementById('modalBillFormat');
+    if (formatSelect) {
+        formatSelect.disabled = false;
+        formatSelect.innerHTML = `
+            <option value="ipd_detailed" selected>Inpatient Bill (PDF)</option>
+            <option value="standard">Retail Bill (GST)</option>
+            <option value="both">Both (Inpatient &amp; Retail)</option>
+        `;
+    }
+
     const previewModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('billingPreviewModal'));
     previewModal.show();
 
@@ -3673,6 +3931,16 @@ function openBillingPreviewModal() {
             modeSelect.focus();
         }
     }, 350);
+}
+
+function onModalBillFormatChange(val) {
+    const hiddenFormat = document.getElementById('hiddenBillFormat');
+    if (hiddenFormat) hiddenFormat.value = val;
+}
+
+function previewSelectedBillFormat() {
+    const format = document.getElementById('modalBillFormat')?.value || 'ipd_detailed';
+    previewCurrentBill(format);
 }
 
 function handleModalModeKeydown(e) {
@@ -3805,106 +4073,322 @@ function previewCurrentBill(format = 'standard') {
     const discountAmt = discType === 'FLAT' ? Math.min(subtotal, discVal) : (subtotal * (discountPercent / 100));
     const gstAmt = parseFloat(document.getElementById('modalLblGst').textContent.replace('₹', '')) || 0;
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
-    const paymentMode = document.getElementById('modalPaymentMode').value;
     const billDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
     const billDateTime = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' : ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    let itemsHtml = '';
+    // 1. Build Inpatient Items List HTML
+    let ipdItemsHtml = '';
     cart.forEach((it, idx) => {
-        const qty = it.quantity || 1;
-        const price = it.price || 0;
+        const qty = it.quantity;
+        const price = it.price;
         const netAmt = (qty * price).toFixed(2);
-        let expFormatted = '--/--';
-        if (it.expiry_date) {
-            const parts = it.expiry_date.split('-');
-            if (parts.length >= 2) {
-                expFormatted = parts[1] + '/' + (parts[0].length === 4 ? parts[0].substring(2) : parts[0]);
-            } else {
-                expFormatted = it.expiry_date;
-            }
+        let mfg = '--/--';
+        if (it.manufacturing_date && it.manufacturing_date.length >= 7) {
+            mfg = it.manufacturing_date.substring(5, 7) + '/' + it.manufacturing_date.substring(2, 4);
+        } else if (it.manufacturing_date) {
+            mfg = it.manufacturing_date;
+        } else {
+            mfg = '06/26';
         }
 
-        itemsHtml += `
-            <tr style="border-bottom: 1px dashed #ccc;">
-                <td style="padding: 7px 4px; text-align: left;">${idx + 1}</td>
-                <td style="padding: 7px 4px; text-align: left;">${billDate}</td>
-                <td style="padding: 7px 4px; text-align: left;"><strong>${it.medicine_name.toUpperCase()}</strong></td>
-                <td style="padding: 7px 4px; text-align: center; font-family: monospace;">${expFormatted}</td>
-                <td style="padding: 7px 4px; text-align: center;">${qty}</td>
-                <td style="padding: 7px 4px; text-align: right;">${price.toFixed(2)}</td>
-                <td style="padding: 7px 4px; text-align: right;"><strong>${netAmt}</strong></td>
+        let exp = '--/--';
+        if (it.expiry_date && it.expiry_date.length >= 7) {
+            exp = it.expiry_date.substring(5, 7) + '/' + it.expiry_date.substring(2, 4);
+        } else if (it.expiry_date) {
+            exp = it.expiry_date;
+        } else {
+            exp = '12/27';
+        }
+
+        ipdItemsHtml += `
+            <div style="margin-bottom: 8px;">
+                <div style="display: flex; align-items: flex-start;">
+                    <div style="width: 4%; text-align: left;">${idx + 1}</div>
+                    <div style="width: 40%; text-align: left; padding-right: 10px;">
+                        <strong>${it.medicine_name.toUpperCase()}</strong>
+                        <div style="padding-left: 4%; font-size: 10.5px; color: #222;">
+                            Batch: ${it.batch_number || 'STD-01'} | Packed: ${qty.toFixed(2)}, Returned: 0.00 | Charged: ${qty}
+                        </div>
+                    </div>
+                    <div style="width: 10%; text-align: center;">${mfg}</div>
+                    <div style="width: 10%; text-align: center;">${exp}</div>
+                    <div style="width: 10%; text-align: right; padding-right: 12px;">${qty.toFixed(2)}</div>
+                    <div style="width: 12%; text-align: right; padding-right: 12px;">${price.toFixed(2)}</div>
+                    <div style="width: 14%; text-align: right;">${netAmt}</div>
+                </div>
+            </div>
+        `;
+    });
+
+    const ipdSheetHtml = `
+        <div class="ipd-pdf-sheet" id="section-ipd-bill">
+            <div style="font-weight:700; font-size:13.5px;">VATSALYA HOSPITAL KHARADI-PUNE</div>
+            <div style="font-size:11px;">22, 2A, Mundhwa - Kharadi Rd, near Galaxy Pathare Plaza, Kharadi, Pune-411014</div>
+            <div style="font-size:11px;">CIN: U85110KA2003PTC033055</div>
+            <div style="text-align:center; font-weight:700; margin:12px 0 6px 0;">Date: ${billDateTime}</div>
+            <div class="ipd-divider"></div>
+            <div style="text-align:center; font-weight:700; font-size:12.5px;">INPATIENT BILL OF SUPPLY - DETAIL</div>
+            <div class="ipd-divider"></div>
+            <div style="display:grid; grid-template-columns:55% 45%; row-gap:2px; font-size:11px; margin:6px 0;">
+                <div><strong>Name</strong> : ${patientName.toUpperCase()}</div>
+                <div><strong>Reg No.</strong> : ${patientUhid}</div>
+            </div>
+            <div style="display:flex; font-weight:700; padding:4px 0; border-top:1px dashed #000; border-bottom:1px dashed #000; margin:6px 0 8px 0;">
+                <div style="width:4%;">#</div>
+                <div style="width:40%;">Ref. No. Order Item</div>
+                <div style="width:10%; text-align:center;">Mfg Date</div>
+                <div style="width:10%; text-align:center;">Expiry</div>
+                <div style="width:10%; text-align:right; padding-right:12px;">Qty</div>
+                <div style="width:12%; text-align:right; padding-right:12px;">Price</div>
+                <div style="width:14%; text-align:right;">Amount(Rs.) Net</div>
+            </div>
+            <div style="font-weight:700; margin:8px 0 4px 0;">1 Pharmacy Drugs &nbsp;&nbsp; GSTIN : 27AAQFV6256M1Z8</div>
+            ${ipdItemsHtml}
+            <div style="display:flex; justify-content:flex-end; border-top:1px dashed #777; padding-top:4px; margin-top:8px;">
+                <div style="font-weight:700; margin-right:28px;">Sub Total</div>
+                <div style="font-weight:700; width:120px; text-align:right;">${subtotal.toFixed(2)}</div>
+            </div>
+            <div style="text-align:center; margin-top:24px; font-size:10.5px;">Page 1 of 1</div>
+        </div>
+    `;
+
+    // 2. Build Retail Items Table Rows HTML
+    let retailRowsHtml = '';
+    cart.forEach((ci) => {
+        const qty = ci.quantity;
+        const rate = ci.price;
+        const lineSub = (qty * rate).toFixed(2);
+        const gstPct = ci.gst_percent || 12;
+        const sgstPct = (gstPct / 2).toFixed(2);
+        const cgstPct = (gstPct / 2).toFixed(2);
+        const lineGst = (lineSub * (gstPct / 100)).toFixed(2);
+        const sgstAmt = (lineGst / 2).toFixed(2);
+        const cgstAmt = (lineGst - sgstAmt).toFixed(2);
+        const exp = ci.expiry_date && ci.expiry_date.length >= 7 ? ci.expiry_date.substring(5, 7) + '/' + ci.expiry_date.substring(2, 4) : '--/--';
+        const batch = ci.batch_number || 'STD-01';
+        const pack = ci.pack_size || (ci.unit ? '1 ' + ci.unit.toUpperCase() : '1 NOS');
+        const comp = ci.manufacturer ? ci.manufacturer.substring(0, 5).toUpperCase() : 'GEN';
+
+        retailRowsHtml += `
+            <tr class="item-row">
+                <td class="text-center">${qty}</td>
+                <td class="text-center">${pack}</td>
+                <td class="text-center">${comp}</td>
+                <td class="text-left" style="padding-left: 4px;">${ci.medicine_name.toUpperCase()}</td>
+                <td class="text-center">${batch}</td>
+                <td class="text-center">${exp}</td>
+                <td class="text-right" style="padding-right: 4px;">${rate.toFixed(2)}</td>
+                <td class="text-right" style="padding-right: 4px;">${rate.toFixed(2)}</td>
+                <td class="text-center">30049</td>
+                <td class="text-right" style="font-size: 9px;">${sgstPct}</td>
+                <td class="text-right" style="font-size: 9px;">${sgstAmt}</td>
+                <td class="text-right" style="font-size: 9px;">${cgstPct}</td>
+                <td class="text-right" style="font-size: 9px;">${cgstAmt}</td>
+                <td class="text-right fw-bold" style="padding-right: 4px;">${lineSub}</td>
             </tr>
         `;
     });
 
-    previewDoc = `
+    for (let i = cart.length; i < 10; i++) {
+        retailRowsHtml += `<tr class="blank-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
+    }
+
+    const retailSheetHtml = `
+        <div class="invoice-sheet" id="section-retail-bill">
+            <div class="invoice-title">GST TAX INVOICE</div>
+            <div class="header-grid">
+                <div class="header-box">
+                    <div class="shop-name">VATSALYA MEDICAL</div>
+                    <div>1ST FLR, VATSALYA HOSPITAL, GALAXY PATHARE PLAZA,</div>
+                    <div>SAINATH NAGAR, KHARADI, PUNE-411014 Galaxy Pathare</div>
+                    <div><strong>DL No.</strong> : 20-276335,21-276336-MH-PZ1</div>
+                    <div><strong>GST No.</strong> : 27AAQFV6256M1Z8</div>
+                </div>
+                <div class="header-box">
+                    <div class="header-line"><span class="header-label">Bill No.</span><span>: <strong>'CR' DRAFT-PREVIEW</strong></span></div>
+                    <div class="header-line"><span class="header-label">Date</span><span>: ${billDate}</span></div>
+                    <div class="header-line"><span class="header-label">Ward/Bed</span><span>: ${wardBed.toUpperCase()}</span></div>
+                    <div class="header-line"><span class="header-label">UHID</span><span>: ${patientUhid}</span></div>
+                </div>
+                <div class="header-box">
+                    <div class="header-line"><span class="header-label">Patient Name</span><span>: ${patientName.toUpperCase()}</span></div>
+                    <div class="header-line"><span class="header-label">Patient Add</span><span>: KHARADI, PUNE</span></div>
+                    <div class="header-line"><span class="header-label">Doctor Name</span><span>: ${doctorName.toUpperCase()}</span></div>
+                    <div class="header-line"><span class="header-label">Doctor Address</span><span>: VATSALYA HOSPITAL</span></div>
+                </div>
+            </div>
+            <table class="invoice-table">
+                <colgroup>
+                    <col style="width: 4%;"><col style="width: 7%;"><col style="width: 6%;"><col style="width: 29%;">
+                    <col style="width: 10%;"><col style="width: 6%;"><col style="width: 7%;"><col style="width: 7%;">
+                    <col style="width: 6%;"><col style="width: 4%;"><col style="width: 5%;"><col style="width: 4%;">
+                    <col style="width: 5%;"><col style="width: 9%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th rowspan="2">Qty</th><th rowspan="2">Pack</th><th rowspan="2">Comp</th><th rowspan="2" class="text-left" style="padding-left:4px;">Description</th>
+                        <th rowspan="2">Batch</th><th rowspan="2">Exp</th><th rowspan="2">MRP</th><th rowspan="2">Rate</th><th rowspan="2">HSN</th>
+                        <th colspan="2" style="border-bottom:1px solid #000;">SGST</th><th colspan="2" style="border-bottom:1px solid #000;">CGST</th><th rowspan="2">Amount</th>
+                    </tr>
+                    <tr><th style="font-size:8.5px; padding:1px;">%</th><th style="font-size:8.5px; padding:1px;">Amt</th><th style="font-size:8.5px; padding:1px;">%</th><th style="font-size:8.5px; padding:1px;">Amt</th></tr>
+                </thead>
+                <tbody>${retailRowsHtml}</tbody>
+            </table>
+            <div class="footer-grid">
+                <div class="footer-box">
+                    <div>5% / 12% GST : ${gstAmt.toFixed(2)}</div>
+                    <div style="font-size:9px; border-top:1px dashed #777; margin-top:auto; padding-top:2px;">E &amp; O E Subject to Pune Jurisdiction</div>
+                </div>
+                <div class="footer-box" style="text-align:center; align-items:center;">
+                    <div style="font-weight:700;">GET WELL SOON..............</div>
+                    <div style="font-size:10px; font-weight:600;">For VATSALYA MEDICAL</div>
+                    <div style="height:28px;"></div>
+                    <div style="font-size:9.5px; font-weight:700;">PHARMACIST SIGN</div>
+                </div>
+                <div class="footer-box">
+                    <div class="summary-line"><span class="summary-label">GST Amt</span><span class="summary-val">: ${gstAmt.toFixed(2)}</span></div>
+                    <div class="summary-line"><span class="summary-label">Gross Amt</span><span class="summary-val">: ${subtotal.toFixed(2)}</span></div>
+                    <div class="summary-line"><span class="summary-label">Disc</span><span class="summary-val">: ${discountAmt.toFixed(2)}</span></div>
+                    <div class="summary-line" style="font-size:11px;"><span class="summary-label"><strong>Amount</strong></span><span class="summary-val">: <strong>${grandTotal.toFixed(2)}</strong></span></div>
+                    <div style="font-size:9px; text-align:right; border-top:1px dotted #888; margin-top:auto; padding-top:2px;">Page No. : 1</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 3. Assemble complete Preview HTML Document
+    let titleText = 'Bill Preview - ' + patientName;
+    let topBarTitle = '<i class="bi bi-receipt text-primary"></i> Bill Preview (Unconfirmed Draft)';
+    let bodyContent = '';
+    let navButtons = '';
+
+    if (format === 'both') {
+        titleText = 'Bill Preview (Dual Format) - ' + patientName;
+        topBarTitle = '<i class="bi bi-files text-primary"></i> Bill Preview';
+        navButtons = `
+            <div style="display:inline-flex; border-radius:6px; overflow:hidden; border:1px solid #cbd5e1; margin-right:4px;">
+                <button type="button" id="btnTabIpd" class="btn" onclick="switchPreviewBillTab('ipd')" style="border-radius:0; border:none; background:#0284c7; color:#fff; font-weight:700; padding:6px 14px; font-size:12px;">
+                    <i class="bi bi-file-earmark-pdf"></i> Inpatient Bill (PDF)
+                </button>
+                <button type="button" id="btnTabRetail" class="btn" onclick="switchPreviewBillTab('retail')" style="border-radius:0; border:none; background:#f1f5f9; color:#334155; font-weight:700; padding:6px 14px; font-size:12px;">
+                    <i class="bi bi-receipt"></i> Retail Bill (GST)
+                </button>
+            </div>
+        `;
+        bodyContent = `
+            <div id="section-ipd-bill" style="display: block; width: 100%; max-width: 900px;">
+                ${ipdSheetHtml}
+            </div>
+            <div id="section-retail-bill" style="display: none; width: 100%; max-width: 900px;">
+                ${retailSheetHtml}
+            </div>
+        `;
+    } else if (format === 'ipd_detailed') {
+        titleText = 'Inpatient Bill of Supply Preview - ' + patientName;
+        topBarTitle = '<i class="bi bi-hospital text-primary"></i> Inpatient Bill Preview (Unconfirmed Draft)';
+        bodyContent = ipdSheetHtml;
+    } else {
+        titleText = 'Retail GST Invoice Preview - ' + patientName;
+        topBarTitle = '<i class="bi bi-receipt text-primary"></i> Retail GST Invoice Preview (Unconfirmed Draft)';
+        bodyContent = retailSheetHtml;
+    }
+
+    let previewDoc = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Bill - ${patientName}</title>
+    <title>${titleText}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: "Segoe UI", Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #111; background: #525659; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; }
-        .no-print-bar { width: 100%; max-width: 800px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: Arial, sans-serif; }
+        body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #525659; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; }
+        .no-print-bar { width: 100%; max-width: 900px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; border-radius: 6px; cursor: pointer; border: none; }
-        .btn-primary { background: #0d9488; color: #fff; }
+        .btn-primary { background: #0284c7; color: #fff; }
         .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
-        .bill-sheet { background: #fff; width: 100%; max-width: 800px; min-height: 480px; padding: 32px 36px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); border-radius: 4px; }
-        .bill-header-line { font-size: 17px; font-weight: 800; text-align: center; letter-spacing: 0.5px; padding-bottom: 10px; border-bottom: 2px solid #000; margin-bottom: 14px; }
-        .patient-line { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700; margin-bottom: 16px; }
-        .med-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12.5px; }
-        .med-table th { border-bottom: 2px solid #000; border-top: 1.5px solid #000; padding: 8px 4px; text-align: left; font-weight: 700; }
-        .total-block { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 2px solid #000; font-size: 15.5px; font-weight: 800; }
+        
+        /* Format 2: Inpatient Sheet */
+        .ipd-pdf-sheet { font-family: "Courier New", Courier, monospace; font-size: 11.5px; line-height: 1.4; color: #000; background: #fff; width: 100%; max-width: 900px; min-height: 700px; padding: 24px 30px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); margin-bottom: 20px; }
+        .ipd-divider { border-top: 1px dashed #000; margin: 6px 0; }
+        
+        /* Format 1: Retail Sheet */
+        .invoice-sheet { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #fff; width: 100%; max-width: 900px; padding: 12px 14px; border: 1px solid #000; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+        .invoice-title { text-align: center; font-size: 11.5px; font-weight: 700; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid #000; }
+        .header-grid { display: grid; grid-template-columns: 42% 23% 35%; border: 1px solid #000; margin-bottom: 4px; font-size: 10.5px; line-height: 1.35; }
+        .header-box { padding: 4px 6px; }
+        .header-box:not(:last-child) { border-right: 1px solid #000; }
+        .shop-name { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
+        .header-line { display: flex; margin-bottom: 1px; }
+        .header-label { font-weight: 600; min-width: 80px; }
+        .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; margin-bottom: 4px; }
+        .invoice-table th { border: 1px solid #000; padding: 3px 2px; font-weight: 700; text-align: center; font-size: 9.5px; }
+        .invoice-table td { border-left: 1px solid #000; border-right: 1px solid #000; padding: 2.5px 3px; font-size: 10px; }
+        .invoice-table tr.item-row td { height: 18px; }
+        .invoice-table tr.blank-row td { height: 16px; }
+        .text-center { text-align: center; } .text-right { text-align: right; } .text-left { text-align: left; } .fw-bold { font-weight: 700; }
+        .footer-grid { display: grid; grid-template-columns: 33% 37% 30%; border: 1px solid #000; font-size: 10.5px; min-height: 85px; }
+        .footer-box { padding: 4px 6px; display: flex; flex-direction: column; justify-content: space-between; }
+        .footer-box:not(:last-child) { border-right: 1px solid #000; }
+        .summary-line { display: flex; justify-content: space-between; margin-bottom: 1.5px; }
+        .summary-label { font-weight: 600; } .summary-val { font-weight: 700; min-width: 65px; text-align: right; }
+        
         @media print {
-            @page { size: A4 portrait; margin: 10mm; }
+            @page { size: A4 portrait; margin: 6mm; }
             body { background: #fff !important; padding: 0 !important; }
             .no-print-bar { display: none !important; }
-            .bill-sheet { box-shadow: none !important; padding: 0 !important; width: 100% !important; }
+            .ipd-pdf-sheet { box-shadow: none !important; padding: 6mm !important; margin: 0 !important; }
+            .invoice-sheet { box-shadow: none !important; padding: 6mm !important; margin: 0 !important; border: 1px solid #000 !important; }
         }
     </style>
 </head>
 <body>
     <div class="no-print-bar">
-        <div style="font-weight:700; display:flex; align-items:center; gap:8px;"><i class="bi bi-receipt text-success"></i> Inpatient Bill Preview</div>
-        <div style="display:flex; gap:8px;">
+        <div style="font-weight:700; display:flex; align-items:center; gap:8px;">${topBarTitle}</div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            ${navButtons}
             <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print Bill</button>
-            <button class="btn btn-secondary" onclick="window.close()"><i class="bi bi-x-lg"></i> Close</button>
+            <button class="btn btn-secondary" onclick="window.close()"><i class="bi bi-x-lg"></i> Close Preview</button>
         </div>
     </div>
-    <div class="bill-sheet">
-        <div class="bill-header-line">Vatsalya &nbsp;&nbsp;&nbsp;&nbsp; GSTIN: 27AAQFV6256M1Z8</div>
-        <div class="patient-line">
-            <div><strong>Patient Name:</strong> ${patientName.toUpperCase()}</div>
-            <div><strong>Date:</strong> ${billDate}</div>
-        </div>
-        <table class="med-table">
-            <thead>
-                <tr>
-                    <th style="width: 5%;">#</th>
-                    <th style="width: 14%;">Date</th>
-                    <th style="width: 43%;">Medicine Name</th>
-                    <th style="width: 14%; text-align: center;">Expiry Date</th>
-                    <th style="width: 7%; text-align: center;">Qty</th>
-                    <th style="width: 8%; text-align: right;">Price</th>
-                    <th style="width: 9%; text-align: right;">Amount</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${itemsHtml}
-            </tbody>
-        </table>
-        <div class="total-block">
-            <div style="display: flex; width: 240px; justify-content: space-between;">
-                <span>Total:</span>
-                <span>₹${grandTotal.toFixed(2)}</span>
-            </div>
-        </div>
-    </div>
+    ${bodyContent}
+
+    <script>
+        function switchPreviewBillTab(tab) {
+            var ipdEl = document.getElementById('section-ipd-bill');
+            var retailEl = document.getElementById('section-retail-bill');
+            var btnIpd = document.getElementById('btnTabIpd');
+            var btnRetail = document.getElementById('btnTabRetail');
+
+            if (tab === 'ipd') {
+                if (ipdEl) ipdEl.style.display = 'block';
+                if (retailEl) retailEl.style.display = 'none';
+                if (btnIpd) {
+                    btnIpd.style.background = '#0284c7';
+                    btnIpd.style.color = '#ffffff';
+                }
+                if (btnRetail) {
+                    btnRetail.style.background = '#f1f5f9';
+                    btnRetail.style.color = '#334155';
+                }
+            } else {
+                if (ipdEl) ipdEl.style.display = 'none';
+                if (retailEl) retailEl.style.display = 'block';
+                if (btnIpd) {
+                    btnIpd.style.background = '#f1f5f9';
+                    btnIpd.style.color = '#334155';
+                }
+                if (btnRetail) {
+                    btnRetail.style.background = '#0284c7';
+                    btnRetail.style.color = '#ffffff';
+                }
+            }
+        }
+    <\/script>
 </body>
 </html>
     `;
+
     const win = window.open('', '_blank');
     if (win) {
         win.document.open();
@@ -3934,6 +4418,9 @@ function submitFinalSale() {
     const paymentMode = document.getElementById('modalPaymentMode').value;
     const notes = document.getElementById('modalNotesInput').value.trim();
 
+    const formatSelect = document.getElementById('modalBillFormat');
+    const chosenFormat = formatSelect ? formatSelect.value : 'ipd_detailed';
+
     // Populate cart items JSON
     document.getElementById('cartItemsJson').value = JSON.stringify(cart);
     document.getElementById('hiddenPaidAmount').value = paymentMode === 'CREDIT' ? 0.0 : grandTotal;
@@ -3941,6 +4428,7 @@ function submitFinalSale() {
     document.getElementById('hiddenDiscountValue').value = discountVal;
     document.getElementById('hiddenDiscountPercent').value = discountPercent.toFixed(4);
     document.getElementById('hiddenPaymentMode').value = paymentMode;
+    document.getElementById('hiddenBillFormat').value = chosenFormat;
     document.getElementById('hiddenNotes').value = notes;
 
     const btn = document.getElementById('modalBtnConfirmSale');

@@ -206,9 +206,9 @@ if (!$sale) {
 // Determine if this is an IPD sale
 $isIpdSale = ($sale['sale_type'] === 'IPD_SALE' || !empty($sale['ipd_admission_id']) || !empty($sale['ipd_ward']));
 
-// Format selector: 'standard' (OPD retail GST invoice) or 'ipd_detailed' (Hospital Inpatient Bill of Supply)
+// Format selector: 'standard' (OPD retail GST invoice), 'ipd_detailed' (Hospital Inpatient Bill of Supply), or 'both'
 $format = $_GET['format'] ?? ($isIpdSale && isset($_GET['ipd']) ? 'ipd_detailed' : 'standard');
-if ($format !== 'ipd_detailed') {
+if ($format !== 'ipd_detailed' && $format !== 'both') {
     $format = 'standard';
 }
 
@@ -297,6 +297,8 @@ foreach ($sale['items'] as $item) {
             $mrp = (float)(!empty($b['batch_mrp']) ? $b['batch_mrp'] : (!empty($item['med_mrp']) ? $item['med_mrp'] : $rate));
             $batchNo = $b['batch_number'] ?: 'ALG-3420';
             $expDate = !empty($b['expiry_date']) ? date('m/y', strtotime($b['expiry_date'])) : '09/27';
+            $mfgRaw = !empty($b['manufacturing_date']) ? $b['manufacturing_date'] : (!empty($item['manufacturing_date']) ? $item['manufacturing_date'] : (!empty($item['mfg_date']) ? $item['mfg_date'] : ''));
+            $mfgDate = !empty($mfgRaw) ? date('m/y', strtotime($mfgRaw)) : '06/26';
             
             $lineSubtotal = round($qty * $rate, 2);
             $totalGross += $lineSubtotal;
@@ -321,6 +323,7 @@ foreach ($sale['items'] as $item) {
                 'description' => strtoupper($medName),
                 'batch'       => strtoupper($batchNo),
                 'exp'         => $expDate,
+                'mfg'         => $mfgDate,
                 'mrp'         => $mrp,
                 'rate'        => $rate,
                 'hsn'         => $hsn,
@@ -336,6 +339,7 @@ foreach ($sale['items'] as $item) {
                 'name'        => strtoupper($medName),
                 'details'     => ($item['generic_name'] ? "({$item['generic_name']})" : "") . ($item['manufacturer'] ? ", " . strtoupper($item['manufacturer']) : ""),
                 'batch'       => $batchNo,
+                'mfg'         => $mfgDate,
                 'exp'         => $expDate,
                 'qty'         => number_format($qty, 2),
                 'price'       => number_format($rate, 2),
@@ -348,6 +352,8 @@ foreach ($sale['items'] as $item) {
         $mrp = (float)(!empty($item['med_mrp']) ? $item['med_mrp'] : $rate);
         $batchNo = 'ALG-3420';
         $expDate = '09/27';
+        $mfgRaw = !empty($item['manufacturing_date']) ? $item['manufacturing_date'] : (!empty($item['mfg_date']) ? $item['mfg_date'] : '');
+        $mfgDate = !empty($mfgRaw) ? date('m/y', strtotime($mfgRaw)) : '06/26';
 
         $lineSubtotal = round($qty * $rate, 2);
         $totalGross += $lineSubtotal;
@@ -371,6 +377,7 @@ foreach ($sale['items'] as $item) {
             'description' => strtoupper($medName),
             'batch'       => $batchNo,
             'exp'         => $expDate,
+            'mfg'         => $mfgDate,
             'mrp'         => $mrp,
             'rate'        => $rate,
             'hsn'         => $hsn,
@@ -386,6 +393,7 @@ foreach ($sale['items'] as $item) {
             'name'        => strtoupper($medName),
             'details'     => ($item['generic_name'] ? "({$item['generic_name']})" : ""),
             'batch'       => $batchNo,
+            'mfg'         => $mfgDate,
             'exp'         => $expDate,
             'qty'         => number_format($qty, 2),
             'price'       => number_format($rate, 2),
@@ -409,7 +417,7 @@ if ($grandTotal <= 0.0) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $format === 'ipd_detailed' ? 'Inpatient Bill of Supply' : 'GST Tax Invoice' ?> - <?= htmlspecialchars($billNo) ?></title>
+    <title><?= $format === 'ipd_detailed' ? 'Inpatient Bill of Supply' : ($format === 'both' ? 'Inpatient & Retail Bill' : 'GST Tax Invoice') ?> - <?= htmlspecialchars($billNo) ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     
     <style>
@@ -826,10 +834,12 @@ if ($grandTotal <= 0.0) {
             font-size: 13px;
         }
         .ipd-col-idx { width: 4%; text-align: left; }
-        .ipd-col-item { width: 56%; text-align: left; padding-right: 12px; }
-        .ipd-col-qty { width: 10%; text-align: right; padding-right: 14px; }
-        .ipd-col-price { width: 14%; text-align: right; padding-right: 14px; }
-        .ipd-col-net { width: 16%; text-align: right; }
+        .ipd-col-item { width: 40%; text-align: left; padding-right: 10px; }
+        .ipd-col-mfg { width: 10%; text-align: center; }
+        .ipd-col-exp { width: 10%; text-align: center; }
+        .ipd-col-qty { width: 10%; text-align: right; padding-right: 12px; }
+        .ipd-col-price { width: 12%; text-align: right; padding-right: 12px; }
+        .ipd-col-net { width: 14%; text-align: right; }
 
         .ipd-section-heading {
             font-weight: 700;
@@ -1076,6 +1086,20 @@ if ($grandTotal <= 0.0) {
                 <a href="invoice.php?id=<?= $saleId ?>&format=ipd_detailed" class="btn <?= $format === 'ipd_detailed' ? 'btn-active-toggle' : 'btn-secondary' ?>" title="Switch to Inpatient Bill of Supply (PDF Style)">
                     <i class="bi bi-file-earmark-pdf"></i> Inpatient PDF Style
                 </a>
+                <a href="invoice.php?id=<?= $saleId ?>&format=both" class="btn <?= $format === 'both' ? 'btn-active-toggle' : 'btn-secondary' ?>" title="Dual Format Mode">
+                    <i class="bi bi-files"></i> Both (IPD + Retail)
+                </a>
+            <?php endif; ?>
+
+            <?php if ($format === 'both'): ?>
+                <div class="d-inline-flex border rounded overflow-hidden ms-1">
+                    <button type="button" id="btnInvTabIpd" class="btn btn-primary btn-sm" onclick="switchInvoiceTab('ipd')" style="border-radius:0; font-size:11.5px; padding:4px 10px; font-weight:600;">
+                        <i class="bi bi-file-earmark-pdf"></i> Inpatient
+                    </button>
+                    <button type="button" id="btnInvTabRetail" class="btn btn-secondary btn-sm" onclick="switchInvoiceTab('retail')" style="border-radius:0; font-size:11.5px; padding:4px 10px; font-weight:600;">
+                        <i class="bi bi-receipt"></i> Retail
+                    </button>
+                </div>
             <?php endif; ?>
 
             <!-- Edit Details Toggle Button -->
@@ -1118,82 +1142,115 @@ if ($grandTotal <= 0.0) {
         </div>
     </div>
 
-    <?php if ($format === 'ipd_detailed'): ?>
+    <?php if ($format === 'ipd_detailed' || $format === 'both'): ?>
         <!-- ================================================================= -->
-        <!-- FORMAT 2: INPATIENT BILL (MINIMAL CLEAN LAYOUT)                   -->
+        <!-- FORMAT 2: INPATIENT BILL OF SUPPLY - DETAIL (PDF FORMAT)          -->
         <!-- ================================================================= -->
-        <div class="ipd-pdf-sheet" id="invoiceContainer" style="max-width: 800px; margin: 0 auto; padding: 28px 32px;">
-            <div style="font-size: 18px; font-weight: 800; text-align: center; letter-spacing: 0.5px; padding-bottom: 10px; border-bottom: 2px solid #000; margin-bottom: 14px;">
-                Vatsalya &nbsp;&nbsp;&nbsp;&nbsp; GSTIN: <?= htmlspecialchars($hospitalGstin) ?>
-            </div>
+        <div id="invoiceContainer_ipd_wrap" style="display: <?= ($format === 'both' ? 'block' : 'contents') ?>;">
+            <div class="ipd-pdf-sheet" id="invoiceContainer<?= $format === 'both' ? '_ipd' : '' ?>">
+                <div class="ipd-hospital-title"><?= htmlspecialchars($hospitalName) ?></div>
+                <div class="ipd-address-line"><?= htmlspecialchars($hospitalAddress) ?></div>
+                <div class="ipd-address-line">CIN: <?= htmlspecialchars($hospitalCin) ?></div>
 
-            <div style="display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700; margin-bottom: 16px;">
-                <div><strong>Patient Name:</strong> <span class="editable-field" id="ipdPatientName" data-field="patient_name"><?= strtoupper(htmlspecialchars($patientName)) ?></span></div>
-                <div><strong>Date:</strong> <span class="editable-field" id="ipdDateVal" data-field="sale_date"><?= htmlspecialchars($billDate) ?></span></div>
-            </div>
+                <div class="ipd-date-line">Date: <span class="editable-field" id="ipdDateVal" data-field="sale_date"><?= htmlspecialchars($billDateTime) ?></span></div>
+                <div class="ipd-divider"></div>
 
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12.5px;">
-                <thead>
-                    <tr style="border-top: 1.5px solid #000; border-bottom: 2px solid #000;">
-                        <th style="padding: 8px 4px; text-align: left; width: 5%;">#</th>
-                        <th style="padding: 8px 4px; text-align: left; width: 14%;">Date</th>
-                        <th style="padding: 8px 4px; text-align: left; width: 43%;">Medicine Name</th>
-                        <th style="padding: 8px 4px; text-align: center; width: 14%;">Expiry Date</th>
-                        <th style="padding: 8px 4px; text-align: center; width: 7%;">Qty</th>
-                        <th style="padding: 8px 4px; text-align: right; width: 8%;">Price</th>
-                        <th style="padding: 8px 4px; text-align: right; width: 9%;">Amount</th>
-                        <th class="edit-ui-control" style="width: 4%;"></th>
-                    </tr>
-                </thead>
-                <tbody id="ipdItemsContainer">
+                <div class="ipd-banner-title">INPATIENT BILL OF SUPPLY - DETAIL</div>
+                <div class="ipd-divider"></div>
+
+                <div class="ipd-meta-grid" style="grid-template-columns: 55% 45%;">
+                    <div class="ipd-meta-item">
+                        <span class="ipd-meta-lbl">Name</span>
+                        <span class="ipd-meta-val">: <strong class="editable-field" id="ipdPatientName" data-field="patient_name"><?= strtoupper(htmlspecialchars($patientName)) ?></strong></span>
+                    </div>
+                    <div class="ipd-meta-item">
+                        <span class="ipd-meta-lbl">Reg No.</span>
+                        <span class="ipd-meta-val">: <span class="editable-field" id="ipdRegNo" data-field="hospital_uhid"><?= htmlspecialchars($regNo) ?></span></span>
+                    </div>
+                </div>
+
+                <div class="ipd-table-header">
+                    <div class="ipd-col-idx">#</div>
+                    <div class="ipd-col-item">Ref. No. Order Item</div>
+                    <div class="ipd-col-mfg">Mfg Date</div>
+                    <div class="ipd-col-exp">Expiry</div>
+                    <div class="ipd-col-qty">Qty</div>
+                    <div class="ipd-col-price">Price</div>
+                    <div class="ipd-col-net">Amount(Rs.) Net</div>
+                </div>
+
+                <div class="ipd-section-heading">
+                    1 Pharmacy Drugs &nbsp;&nbsp; GSTIN : <?= htmlspecialchars($hospitalGstin) ?>
+                </div>
+
+                <div id="ipdItemsContainer">
                     <?php foreach ($ipdItems as $idx => $it): ?>
-                        <tr class="ipd-item-data-row" data-index="<?= $idx ?>" style="border-bottom: 1px dashed #ccc;">
-                            <td style="padding: 7px 4px;"><?= ($idx + 1) ?></td>
-                            <td style="padding: 7px 4px;"><?= htmlspecialchars($billDate) ?></td>
-                            <td style="padding: 7px 4px;">
-                                <strong class="editable-field ipd-item-name" data-field="description"><?= htmlspecialchars($it['name']) ?></strong>
-                            </td>
-                            <td style="padding: 7px 4px; text-align: center; font-family: monospace;">
-                                <span class="editable-field ipd-item-exp" data-field="exp"><?= htmlspecialchars($it['exp'] ?? '--/--') ?></span>
-                            </td>
-                            <td style="padding: 7px 4px; text-align: center;">
-                                <span class="editable-field ipd-item-qty" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= (int)$it['qty'] ?></span>
-                            </td>
-                            <td style="padding: 7px 4px; text-align: right;">
-                                <span class="editable-field ipd-item-price" data-field="rate" oninput="onIpdItemChange(<?= $idx ?>)"><?= $it['price'] ?></span>
-                            </td>
-                            <td style="padding: 7px 4px; text-align: right;">
-                                <strong class="ipd-item-net"><?= $it['net_amount'] ?></strong>
-                            </td>
-                            <td class="edit-ui-control text-center">
-                                <button type="button" class="btn-del-row" onclick="deleteIpdRow(<?= $idx ?>)" title="Remove Item"><i class="bi bi-trash"></i></button>
-                            </td>
-                        </tr>
+                        <div class="ipd-item-row ipd-item-data-row" data-index="<?= $idx ?>">
+                            <div class="ipd-item-line">
+                                <div class="ipd-col-idx"><?= ($idx + 1) ?></div>
+                                <div class="ipd-col-item">
+                                    <strong class="editable-field ipd-item-name" data-field="description"><?= htmlspecialchars($it['name']) ?></strong>
+                                    <?php if (!empty($it['details'])): ?>
+                                        <div style="font-size: 10.5px;"><?= htmlspecialchars($it['details']) ?></div>
+                                    <?php endif; ?>
+                                    <div class="ipd-sub-info">
+                                        Batch: <span class="editable-field ipd-item-batch" data-field="batch"><?= htmlspecialchars($it['batch']) ?></span> | Packed: <span class="editable-field ipd-item-qty-packed"><?= $it['qty'] ?></span>, Returned: 0.00 | Charged: <span class="editable-field ipd-item-qty" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= (int)$it['qty'] ?></span>
+                                    </div>
+                                </div>
+                                <div class="ipd-col-mfg">
+                                    <span class="editable-field ipd-item-mfg" data-field="mfg"><?= htmlspecialchars($it['mfg'] ?? '--/--') ?></span>
+                                </div>
+                                <div class="ipd-col-exp">
+                                    <span class="editable-field ipd-item-exp" data-field="exp"><?= htmlspecialchars($it['exp'] ?? '--/--') ?></span>
+                                </div>
+                                <div class="ipd-col-qty">
+                                    <span class="editable-field ipd-item-qty-col" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= $it['qty'] ?></span>
+                                </div>
+                                <div class="ipd-col-price">
+                                    <span class="editable-field ipd-item-price" data-field="rate" oninput="onIpdItemChange(<?= $idx ?>)"><?= $it['price'] ?></span>
+                                </div>
+                                <div class="ipd-col-net ipd-item-net">
+                                    <?= $it['net_amount'] ?>
+                                </div>
+                                <div class="edit-ui-control ms-2">
+                                    <button type="button" class="btn-del-row" onclick="deleteIpdRow(<?= $idx ?>)" title="Remove Item"><i class="bi bi-trash"></i></button>
+                                </div>
+                            </div>
+                        </div>
                     <?php endforeach; ?>
-                </tbody>
-            </table>
+                </div>
 
-            <div class="edit-ui-control my-2">
-                <button type="button" class="btn-add-item-row" onclick="addNewIpdRow()">
-                    <i class="bi bi-plus-circle"></i> Add Medication Row
-                </button>
-            </div>
+                <div class="edit-ui-control my-2">
+                    <button type="button" class="btn-add-item-row" onclick="addNewIpdRow()">
+                        <i class="bi bi-plus-circle"></i> Add Inpatient Drug Row
+                    </button>
+                </div>
 
-            <div style="display: flex; justify-content: flex-end; padding-top: 12px; border-top: 2px solid #000; font-size: 15.5px; font-weight: 800;">
-                <div style="display: flex; width: 240px; justify-content: space-between;">
-                    <span>Total:</span>
-                    <span id="ipdNetTotal">₹<?= number_format($grandTotal, 2) ?></span>
+                <div class="ipd-subtotal-row">
+                    <div class="ipd-subtotal-label">Sub Total</div>
+                    <div class="ipd-subtotal-val" id="ipdSubtotalVal"><?= number_format($totalGross, 2) ?></div>
+                </div>
+
+                <div class="ipd-page-foot" style="margin-top: 24px;">
+                    Page 1 of 1
                 </div>
             </div>
         </div>
 
-    <?php else: ?>
+        <?php if ($format === 'both'): ?>
+            <div class="both-format-page-break" style="page-break-before: always; break-before: page; margin: 24px 0;"></div>
+        <?php endif; ?>
+
+    <?php endif; ?>
+
+    <?php if ($format === 'standard' || $format === 'both'): ?>
         <!-- ================================================================= -->
         <!-- FORMAT 1: STANDARD GST TAX INVOICE (OPD & IPD RETAIL STYLE)       -->
         <!-- ================================================================= -->
-        <div class="invoice-sheet" id="invoiceContainer">
-            <!-- Center Top Heading -->
-            <div class="invoice-title">GST TAX INVOICE</div>
+        <div id="invoiceContainer_std_wrap" style="display: <?= ($format === 'both' ? 'none' : 'contents') ?>;">
+            <div class="invoice-sheet" id="invoiceContainer<?= $format === 'both' ? '_std' : '' ?>">
+                <!-- Center Top Heading -->
+                <div class="invoice-title">GST TAX INVOICE</div>
 
             <!-- 3-Box Header -->
             <div class="header-grid">
@@ -1397,6 +1454,7 @@ if ($grandTotal <= 0.0) {
                 </div>
             </div>
         </div>
+    </div>
     <?php endif; ?>
 
     <!-- ----------------------------------------------------------------- -->
@@ -1406,6 +1464,25 @@ if ($grandTotal <= 0.0) {
         let isEditMode = false;
         const currentSaleId = <?= (int)$saleId ?>;
         const currentFormat = '<?= $format ?>';
+
+        function switchInvoiceTab(tab) {
+            const ipdWrap = document.getElementById('invoiceContainer_ipd_wrap');
+            const stdWrap = document.getElementById('invoiceContainer_std_wrap');
+            const btnIpd = document.getElementById('btnInvTabIpd');
+            const btnRetail = document.getElementById('btnInvTabRetail');
+
+            if (tab === 'ipd') {
+                if (ipdWrap) ipdWrap.style.display = 'block';
+                if (stdWrap) stdWrap.style.display = 'none';
+                if (btnIpd) { btnIpd.className = 'btn btn-primary btn-sm'; }
+                if (btnRetail) { btnRetail.className = 'btn btn-secondary btn-sm'; }
+            } else {
+                if (ipdWrap) ipdWrap.style.display = 'none';
+                if (stdWrap) stdWrap.style.display = 'block';
+                if (btnIpd) { btnIpd.className = 'btn btn-secondary btn-sm'; }
+                if (btnRetail) { btnRetail.className = 'btn btn-primary btn-sm'; }
+            }
+        }
 
         function toggleEditMode() {
             isEditMode = !isEditMode;
@@ -1615,6 +1692,12 @@ if ($grandTotal <= 0.0) {
                         <div class="ipd-sub-info">
                             Batch: <span class="editable-field ipd-item-batch" data-field="batch" contenteditable="true">GEN-01</span> | Packed: <span class="editable-field ipd-item-qty-packed">1.00</span>, Returned: 0.00 | Charged: <span class="editable-field ipd-item-qty" data-field="qty" contenteditable="true" oninput="onIpdItemChange(${newIdx})">1</span>
                         </div>
+                    </div>
+                    <div class="ipd-col-mfg">
+                        <span class="editable-field ipd-item-mfg" data-field="mfg" contenteditable="true">06/26</span>
+                    </div>
+                    <div class="ipd-col-exp">
+                        <span class="editable-field ipd-item-exp" data-field="exp" contenteditable="true">12/28</span>
                     </div>
                     <div class="ipd-col-qty">
                         <span class="editable-field ipd-item-qty-col" data-field="qty" contenteditable="true" oninput="onIpdItemChange(${newIdx})">1.00</span>
