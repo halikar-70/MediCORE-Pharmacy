@@ -138,8 +138,15 @@ include __DIR__ . '/../../includes/navbar.php';
                 <input type="text" name="medicine_name" class="form-control rounded-3" value="<?= htmlspecialchars($medicine['medicine_name']) ?>" required>
             </div>
             <div class="col-12 col-md-6">
-                <label class="form-label small fw-semibold text-dark">Generic / Salt Composition</label>
+                <label class="form-label small fw-semibold text-dark">Generic Name</label>
                 <input type="text" name="generic_name" class="form-control rounded-3" value="<?= htmlspecialchars($medicine['generic_name'] ?? '') ?>">
+            </div>
+            <div class="col-12">
+                <label class="form-label small fw-semibold text-dark">
+                    <i class="ti ti-flask text-emerald me-1"></i>Active Composition / Contains Remark (What medicine contains)
+                </label>
+                <textarea name="composition" rows="2" class="form-control rounded-3" placeholder="e.g. Paracetamol 650mg | Amoxicillin 500mg + Clavulanic Acid 125mg | Aceclofenac 100mg + Paracetamol 325mg + Serratiopeptidase 15mg"><?= htmlspecialchars($medicine['composition'] ?? '') ?></textarea>
+                <div class="form-text text-muted small">Specify all active chemical salts, ingredients, potencies and clinical remarks.</div>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label small fw-semibold text-dark">Strength / Potency</label>

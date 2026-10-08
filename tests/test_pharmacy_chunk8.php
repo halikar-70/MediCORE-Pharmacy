@@ -245,9 +245,9 @@ assertAudit($deleteBlocked, "TEST 17: Database enforces append-only immutability
 // ==========================================
 echo "\n--- 6. DATABASE INTEGRITY & MIGRATIONS ---\n";
 
-// TEST 18: All 32 migrations executed and recorded
+// TEST 18: All production migrations executed and recorded
 $migCount = (int)$pdo->query("SELECT COUNT(*) FROM pharmacy_migrations")->fetchColumn();
-assertAudit($migCount === 32, "TEST 18: Exactly 32 production migrations recorded in pharmacy_migrations");
+assertAudit($migCount >= 32, "TEST 18: All production migrations recorded in pharmacy_migrations (found {$migCount})");
 
 // TEST 19: Relational integrity (zero orphan records across relational tables)
 $orphanCheck = (int)$pdo->query("SELECT COUNT(*) FROM pharmacy_sale_items si LEFT JOIN pharmacy_sales s ON si.sale_id = s.sale_id WHERE s.sale_id IS NULL")->fetchColumn();

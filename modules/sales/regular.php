@@ -210,9 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             if ($discountType === 'FLAT' && $discountVal > 0) {
                 $itemsSubtotal = 0.0;
-                foreach ($medIds as $k => $mId) {
-                    $mId = (int)$mId;
-                    $q = (int)($quantities[$k] ?? 0);
+                foreach ($itemsPayload as $it) {
+                    $mId = (int)$it['medicine_id'];
+                    $q = (int)$it['quantity'];
                     if ($mId > 0 && $q > 0) {
                         $mStmt = $pdo->prepare("SELECT price FROM medicines WHERE medicine_id = ?");
                         $mStmt->execute([$mId]);
@@ -419,11 +419,17 @@ if (empty($availableDoctors)) {
     $availableDoctors = ['Dr. Anjali Mehta', 'Dr. Ramesh Joshi', 'Dr. Vikram Patil', 'Dr. Sneha Shah', 'Duty Doctor'];
 }
 
+usort($patientsMap, function($a, $b) {
+    $cleanA = preg_replace('/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i', '', trim($a['name'] ?? ''));
+    $cleanB = preg_replace('/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i', '', trim($b['name'] ?? ''));
+    return strcasecmp($cleanA, $cleanB);
+});
+
 $ipdPatientsList = array_values($patientsMap);
 
 // Fetch active medicines with all their batches, expiry date, manufacturer, and mfg rate (FEFO sorted)
 $medRows = $pdo->query("
-    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.dosage_form, m.category, m.unit, m.strength,
+    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.composition, m.dosage_form, m.category, m.unit, m.strength,
            m.manufacturer, m.price as mrp, m.price, COALESCE(m.purchase_price, 0) as purchase_price,
            m.gst_percent,
            mb.batch_id,
@@ -450,6 +456,7 @@ foreach ($medRows as $r) {
             'medicine_id'     => $mid,
             'medicine_name'   => $r['medicine_name'],
             'generic_name'    => $r['generic_name'],
+            'composition'     => $r['composition'] ?? '',
             'dosage_form'     => $r['dosage_form'],
             'category'        => $r['category'],
             'unit'            => $r['unit'],
@@ -542,26 +549,77 @@ include __DIR__ . '/../../includes/navbar.php';
     justify-content: space-between !important;
     padding: 10px 14px !important;
     border-bottom: 1px solid #f1f5f9 !important;
-    background: #ffffff !important;
-    background-color: #ffffff !important;
+    border-left: 4px solid transparent !important;
+    background-color: #ffffff;
     cursor: pointer !important;
     transition: all 0.15s ease !important;
 }
 .med-suggest-item:hover, .med-suggest-item.active-nav {
-    background-color: #f0fdf4 !important;
-    border-left: 3px solid #0d9488 !important;
+    background-color: #ecfdf5 !important;
+    border-left: 4px solid #059669 !important;
+}
+.med-suggest-item:hover .med-name-title, .med-suggest-item.active-nav .med-name-title {
+    color: #047857 !important;
 }
 .search-highlight {
     background: transparent !important;
+    background-color: transparent !important;
     color: #059669 !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     padding: 0 !important;
+    border-radius: 0 !important;
 }
 .patient-match-color {
     background: transparent !important;
+    background-color: transparent !important;
     color: #059669 !important;
     font-weight: 800 !important;
-    padding: 0 1px !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+}
+#cartTable tbody tr.cart-row td {
+    padding: 10px 10px !important;
+    vertical-align: middle !important;
+    height: auto !important;
+}
+.batch-dropdown-container {
+    position: relative !important;
+    display: inline-block !important;
+}
+.expiry-picker-btn {
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+}
+.expiry-picker-btn:hover {
+    filter: brightness(0.95);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1) !important;
+}
+.batch-expiry-menu {
+    position: absolute !important;
+    top: calc(100% + 4px) !important;
+    left: 0 !important;
+    border-radius: 10px !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    box-shadow: 0 16px 36px -4px rgba(15, 23, 42, 0.28), 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+    min-width: 320px !important;
+    max-width: 380px !important;
+    z-index: 1099 !important;
+}
+.batch-option-item {
+    transition: all 0.15s ease !important;
+    border-radius: 8px !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+}
+.batch-option-item:hover {
+    background-color: #f1f5f9 !important;
+}
+.batch-option-item.active-batch {
+    background-color: #f0fdf4 !important;
+    border-color: #059669 !important;
 }
 
 /* Pharmacy Inpatient Registry & Table Styling */
@@ -838,7 +896,10 @@ include __DIR__ . '/../../includes/navbar.php';
                     <div class="col-lg-4 col-md-5">
                         <div class="input-group">
                             <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search text-muted"></i></span>
-                            <input type="text" id="tablePatientSearch" class="form-control bg-white border-start-0 ps-1" placeholder="Search patient name, code, phone, doctor..." oninput="filterPatientsTable()">
+                            <input type="text" id="tablePatientSearch" class="form-control bg-white border-start-0 ps-1" placeholder="Search patient name, code, phone, doctor..." oninput="filterPatientsTable()" onkeydown="onTableSearchKeydown(event)" autocomplete="off">
+                            <button type="button" id="btnClearTableSearch" class="btn btn-outline-secondary border-start-0 d-none" onclick="clearTableSearch()" title="Clear Search">
+                                <i class="ti ti-x"></i>
+                            </button>
                         </div>
                     </div>
                     <div class="col-lg-2 col-md-3">
@@ -1113,24 +1174,25 @@ include __DIR__ . '/../../includes/navbar.php';
                                 Total: ₹0.00
                             </span>
                         </div>
-                        <div class="card border rounded-3 overflow-hidden shadow-xs">
-                            <div class="table-responsive">
+                        <div class="card border rounded-3 shadow-xs" style="overflow: visible !important;">
+                            <div class="table-responsive" style="overflow: visible !important;">
                                 <table class="table table-hover align-middle mb-0" id="cartTable">
                                     <thead class="table-light small text-muted text-uppercase" style="font-size: 0.74rem;">
                                         <tr>
-                                            <th class="text-center" style="width: 5%;">S.NO</th>
-                                            <th style="width: 32%;">CHARGE / MEDICINE NAME</th>
-                                            <th style="width: 22%; min-width: 200px;">EXPIRY DATE</th>
-                                            <th class="text-end" style="width: 10%;">MFG RATE</th>
-                                            <th class="text-end" style="width: 10%;">BILL RATE</th>
-                                            <th class="text-center" style="width: 8%;">QTY</th>
-                                            <th class="text-end" style="width: 10%;">TOTAL</th>
+                                            <th class="text-center" style="width: 4%;">S.NO</th>
+                                            <th style="width: 25%;">CHARGE / MEDICINE NAME</th>
+                                            <th style="width: 20%;">CONTAINS / COMPOSITION</th>
+                                            <th style="width: 15%; min-width: 160px;">EXPIRY DATE</th>
+                                            <th class="text-end" style="width: 9%;">MFG RATE</th>
+                                            <th class="text-end" style="width: 9%;">BILL RATE</th>
+                                            <th class="text-center" style="width: 7%;">QTY</th>
+                                            <th class="text-end" style="width: 8%;">TOTAL</th>
                                             <th class="text-center" style="width: 3%;"></th>
                                         </tr>
                                     </thead>
                                     <tbody id="cartTableBody">
                                         <tr id="emptyCartRow">
-                                            <td colspan="8" class="text-center py-4 text-muted small">
+                                            <td colspan="9" class="text-center py-4 text-muted small">
                                                 No charges added yet. Search a medicine above to automatically add to this bill.
                                             </td>
                                         </tr>
@@ -1234,10 +1296,44 @@ include __DIR__ . '/../../includes/navbar.php';
     cursor: pointer;
     transition: background-color 0.15s ease;
 }
-.ipd-table-row:hover {
-    background-color: #f0f9ff !important;
+.discount-segmented-control {
+    display: inline-flex;
+    align-items: center;
+    background-color: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 3px;
+    gap: 3px;
+    user-select: none;
+    box-sizing: border-box;
 }
-
+.discount-seg-btn {
+    border: none !important;
+    background: transparent !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+    font-size: 0.78rem !important;
+    padding: 4px 11px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease-in-out !important;
+    line-height: 1.25 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    white-space: nowrap !important;
+    box-shadow: none !important;
+}
+.discount-seg-btn:hover:not(.active) {
+    color: #0f172a !important;
+    background-color: #e2e8f0 !important;
+}
+.discount-seg-btn.active {
+    background-color: #0284c7 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.3) !important;
+}
 </style>
 
                 <!-- Patient Summary Strip: 4 Exact Equal-Height Cards -->
@@ -1313,7 +1409,7 @@ include __DIR__ . '/../../includes/navbar.php';
                                 </span>
                             </div>
                             
-                            <div class="d-flex flex-column" style="gap: 12px;">
+                            <div class="d-flex flex-column" style="gap: 14px;">
                                 <div>
                                     <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Attending Doctor</label>
                                     <div class="input-group input-group-sm">
@@ -1325,24 +1421,14 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Ward Dispensing Notes</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-card-text"></i></span>
-                                        <input type="text" id="modalNotesInput" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="e.g. Ward routine dispensing...">
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Billing / Settlement Mode</label>
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-wallet2"></i></span>
-                                        <select id="modalPaymentMode" class="form-select form-select-sm fw-semibold border-start-0" style="height: 34px;" onchange="onModalPaymentModeChange(this.value)">
-                                            <option value="CREDIT" selected>Hospital IPD Credit (Charge to Inpatient Folio)</option>
-                                            <option value="CASH">Direct Cash Settlement</option>
-                                            <option value="UPI">UPI / QR Code</option>
-                                            <option value="CARD">Debit / Credit Card</option>
-                                        </select>
+                                        <input type="text" id="modalNotesInput" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="e.g. Ward routine dispensing..." onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&!event.shiftKey)){event.preventDefault();document.getElementById('modalPaymentMode').focus();}">
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div style="height: 4px;"></div>
+                        <div class="p-2.5 rounded-2 bg-light border text-muted small mt-3" style="font-size: 0.74rem;">
+                            <i class="ti ti-keyboard text-primary me-1"></i> <span class="fw-semibold">Keyboard Flow:</span> Use <kbd class="bg-white border px-1">Tab</kbd> or <kbd class="bg-white border px-1">Enter</kbd> to move from Settlement Mode &rarr; Discount &rarr; Confirm (<kbd class="bg-white border px-1">F9</kbd>).
+                        </div>
                     </div>
 
                     <!-- Right: Financial Summary & Net Calculations -->
@@ -1350,39 +1436,65 @@ include __DIR__ . '/../../includes/navbar.php';
                         <div>
                             <div class="d-flex align-items-center justify-content-between pb-2 mb-3 border-bottom" style="min-height: 32px;">
                                 <span class="fw-bold text-dark d-flex align-items-center" style="font-size: 0.88rem;">
-                                    <i class="bi bi-calculator text-primary" style="margin-right: 8px; font-size: 1rem;"></i> Financial Summary
+                                    <i class="bi bi-calculator text-primary" style="margin-right: 8px; font-size: 1rem;"></i> Financial &amp; Settlement Summary
                                 </span>
                                 <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.72rem;">All values in INR (₹)</span>
                             </div>
 
-                            <div class="d-flex flex-column" style="gap: 8px;">
-                                <!-- Subtotal Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 32px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Subtotal (Gross):</span>
-                                    <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblSubtotal">₹0.00</span>
-                                </div>
-
-                                <!-- Discount Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 32px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Discount (%):</span>
-                                    <div class="d-flex align-items-center justify-content-end">
-                                        <div class="input-group input-group-sm" style="width: 90px;">
-                                            <input type="number" step="0.1" min="0" max="50" id="modalDiscountPercent" class="form-control form-control-sm text-end fw-bold font-monospace px-2" style="font-size: 0.85rem; height: 32px;" value="0.0" oninput="recalcModalTotals()">
-                                            <span class="input-group-text bg-light text-muted px-2 font-monospace" style="font-size: 0.75rem; height: 32px;">%</span>
-                                        </div>
+                            <div class="d-flex flex-column" style="gap: 10px;">
+                                <!-- 1. Billing / Settlement Mode Row -->
+                                <div>
+                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Billing / Settlement Mode</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-wallet2"></i></span>
+                                        <select id="modalPaymentMode" class="form-select form-select-sm fw-semibold border-start-0" style="height: 34px;" onchange="onModalPaymentModeChange(this.value)" onkeydown="handleModalModeKeydown(event)">
+                                            <option value="CREDIT" selected>Hospital IPD Credit (Charge to Inpatient Folio)</option>
+                                            <option value="CASH">Direct Cash Settlement</option>
+                                            <option value="UPI">UPI / QR Code</option>
+                                            <option value="CARD">Debit / Credit Card</option>
+                                        </select>
                                     </div>
                                 </div>
 
-                                <!-- Discount Amount Row (Dynamic) -->
-                                <div class="justify-content-between align-items-center text-danger d-none" id="modalRowDiscount" style="min-height: 32px;">
-                                    <span class="fw-semibold" style="font-size: 0.84rem;">Discount Amount:</span>
-                                    <span class="fw-bold font-monospace text-end" style="font-size: 0.92rem;" id="modalLblDiscountAmt">-₹0.00</span>
-                                </div>
+                                <div class="border-top pt-2 d-flex flex-column" style="gap: 8px;">
+                                    <!-- Subtotal Row -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 28px;">
+                                        <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Subtotal (Gross):</span>
+                                        <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblSubtotal">₹0.00</span>
+                                    </div>
 
-                                <!-- GST Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 32px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">GST (Tax Inclusive):</span>
-                                    <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblGst">₹0.00</span>
+                                    <!-- Discount Row (Visible Segmented Options: Discount % / Flat ₹) -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 34px;">
+                                        <div class="d-flex align-items-center">
+                                            <input type="hidden" id="modalDiscountType" value="PERCENT">
+                                            <div class="discount-segmented-control" id="discountTypeBtnGroup">
+                                                <button type="button" class="discount-seg-btn active" id="btnDiscPercent" onclick="setDiscountMode('PERCENT')">
+                                                    % Discount
+                                                </button>
+                                                <button type="button" class="discount-seg-btn" id="btnDiscFlat" onclick="setDiscountMode('FLAT')">
+                                                    ₹ Flat
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center justify-content-end">
+                                            <div class="input-group input-group-sm" style="width: 105px;">
+                                                <input type="number" step="1" min="0" max="50" id="modalDiscountValue" class="form-control form-control-sm text-end fw-bold font-monospace px-2" style="font-size: 0.88rem; height: 30px;" value="0" placeholder="0" oninput="recalcModalTotals()" onkeydown="handleModalDiscountKeydown(event)">
+                                                <span class="input-group-text bg-light text-muted px-2 font-monospace fw-bold" id="modalDiscountAddon" style="font-size: 0.78rem; height: 30px;">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Discount Amount Row (Dynamic) -->
+                                    <div class="justify-content-between align-items-center text-danger d-none" id="modalRowDiscount" style="min-height: 28px;">
+                                        <span class="fw-semibold" style="font-size: 0.84rem;">Discount Amount:</span>
+                                        <span class="fw-bold font-monospace text-end" style="font-size: 0.92rem;" id="modalLblDiscountAmt">-₹0.00</span>
+                                    </div>
+
+                                    <!-- GST Row -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 28px;">
+                                        <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">GST (Tax Inclusive):</span>
+                                        <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblGst">₹0.00</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1520,19 +1632,92 @@ include __DIR__ . '/../../includes/navbar.php';
 // ----------------- IPD ADMISSIONS REGISTRY TABLE LOGIC -----------------
 let currentFilteredPatients = [];
 
+function highlightIpdMatch(text, query) {
+    if (!text) return '';
+    if (!query) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const qEscaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${qEscaped})`, 'gi');
+    return escaped.replace(regex, '<span class="search-highlight">$1</span>');
+}
+
+function matchIpdPatient(p, q, wardVal) {
+    if (wardVal && wardVal !== 'ALL' && (p.ipd_ward || '').toLowerCase() !== wardVal.toLowerCase()) {
+        return false;
+    }
+    if (!q) return true;
+
+    const name = (p.name || '').toLowerCase();
+    const cleanName = name.replace(/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i, '').trim();
+    const uhid = (p.hospital_uhid || '').toLowerCase();
+    const ipdNo = (p.ipd_admission_no || '').toLowerCase();
+    const mob = (p.mobile || '').toLowerCase();
+    const doc = (p.doctor_name || '').toLowerCase();
+    const cleanDoc = doc.replace(/^dr\.\s+/i, '').trim();
+    const ward = (p.ipd_ward || '').toLowerCase();
+    const bed = (p.ipd_bed || '').toLowerCase();
+    const ref = (p.referred_by || '').toLowerCase();
+
+    // Word lists
+    const nameWords = name.split(/[\s,./-]+/).filter(Boolean);
+    const docWords = doc.split(/[\s,./-]+/).filter(Boolean);
+    const wardWords = ward.split(/[\s,./-]+/).filter(Boolean);
+
+    // If query is short (1 or 2 chars), match by prefix / word start / number
+    if (q.length <= 2) {
+        if (name.startsWith(q) || cleanName.startsWith(q)) return true;
+        if (nameWords.some(w => w.startsWith(q))) return true;
+        if (uhid.startsWith(q) || uhid.includes(q)) return true;
+        if (ipdNo.includes(q)) return true;
+        if (doc.startsWith(q) || cleanDoc.startsWith(q) || docWords.some(w => w.startsWith(q))) return true;
+        if (ward.startsWith(q) || wardWords.some(w => w.startsWith(q)) || bed.includes(q)) return true;
+        if (mob.startsWith(q)) return true;
+        if (ref.startsWith(q)) return true;
+        return false;
+    }
+
+    // For 3+ chars, allow substring match anywhere
+    return name.includes(q) || uhid.includes(q) || ipdNo.includes(q) || 
+           mob.includes(q) || doc.includes(q) || ward.includes(q) || bed.includes(q) || ref.includes(q);
+}
+
+function rankIpdPatient(p, q) {
+    if (!q) return 0;
+    const name = (p.name || '').toLowerCase();
+    const cleanName = name.replace(/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i, '').trim();
+    const uhid = (p.hospital_uhid || '').toLowerCase();
+    const ipdNo = (p.ipd_admission_no || '').toLowerCase();
+    const doc = (p.doctor_name || '').toLowerCase();
+    const cleanDoc = doc.replace(/^dr\.\s+/i, '').trim();
+    const nameWords = name.split(/[\s,./-]+/).filter(Boolean);
+    const docWords = doc.split(/[\s,./-]+/).filter(Boolean);
+
+    // Exact or prefix matches
+    if (name.startsWith(q) || cleanName.startsWith(q)) return 100;
+    if (nameWords.some(w => w.startsWith(q))) return 90;
+    if (uhid.startsWith(q) || uhid.includes(q)) return 85;
+    if (ipdNo.endsWith(q) || ipdNo.includes(q)) return 80;
+    if (doc.startsWith(q) || cleanDoc.startsWith(q) || docWords.some(w => w.startsWith(q))) return 70;
+    if (name.includes(q)) return 50;
+    if (doc.includes(q)) return 40;
+    return 10;
+}
+
 function renderAdmittedPatientsTable(patients) {
     currentFilteredPatients = patients || [];
     const tbody = document.getElementById('admittedTableBody');
     const countBadge = document.getElementById('tableCountBadge');
+    const searchVal = (document.getElementById('tablePatientSearch')?.value || '').trim().toLowerCase();
     if (!tbody) return;
 
     if (!patients || patients.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" class="text-center py-5 text-muted">
+                <td colspan="9" class="text-center py-5 text-muted">
                     <i class="bi bi-people fs-2 d-block mb-2 text-secondary opacity-50"></i>
-                    <div class="fw-semibold">No admitted inpatients found matching your search</div>
-                    <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="resetTableFilters()">Reset Filters</button>
+                    <div class="fw-semibold text-dark mb-1">No admitted inpatients found matching "${escapeHtml(searchVal)}"</div>
+                    <div class="small text-muted mb-2">Check spelling or clear filters to view all admitted inpatients</div>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="resetTableFilters()">Reset Filters</button>
                 </td>
             </tr>
         `;
@@ -1552,24 +1737,31 @@ function renderAdmittedPatientsTable(patients) {
             typeClass = 'badge-type-paidr';
         }
 
+        const highlightedName = highlightIpdMatch(p.name, searchVal);
+        const highlightedIpd = highlightIpdMatch(p.ipd_admission_no, searchVal);
+        const highlightedUhid = p.hospital_uhid ? highlightIpdMatch(p.hospital_uhid, searchVal) : '';
+        const highlightedDoc = p.doctor_name ? highlightIpdMatch(p.doctor_name, searchVal) : 'Dr. Duty Doctor';
+        const highlightedWard = highlightIpdMatch(p.ipd_ward, searchVal);
+        const highlightedBed = highlightIpdMatch(p.ipd_bed, searchVal);
+
         html += `
-            <tr class="ipd-table-row" onclick="openDispenseForPatientIndex(${idx})">
+            <tr class="ipd-table-row" tabindex="0" data-patient-index="${idx}" onkeydown="if(event.key==='Enter'){openDispenseForPatientIndex(${idx});}" onclick="openDispenseForPatientIndex(${idx})">
                 <td class="text-muted text-center font-monospace" style="font-size: 0.82rem;">${idx + 1}</td>
                 <td>
-                    <span class="fw-bold" style="color: #be123c; font-family: monospace; font-size: 0.84rem;">${escapeHtml(p.ipd_admission_no)}</span>
+                    <span class="fw-bold" style="color: #be123c; font-family: monospace; font-size: 0.84rem;">${highlightedIpd}</span>
                 </td>
                 <td>
-                    <div class="fw-bold text-dark" style="font-size: 0.88rem;">${escapeHtml(p.name)}</div>
-                    ${p.hospital_uhid ? `<div class="small text-muted font-monospace" style="font-size: 0.70rem;">${escapeHtml(p.hospital_uhid)}</div>` : ''}
+                    <div class="fw-bold text-dark" style="font-size: 0.88rem;">${highlightedName}</div>
+                    ${highlightedUhid ? `<div class="small text-muted font-monospace" style="font-size: 0.70rem;">${highlightedUhid}</div>` : ''}
                 </td>
                 <td>
                     <span class="badge ${typeClass}" style="font-size: 0.72rem; padding: 4px 8px;">${escapeHtml(p.admission_type || 'Paid')}</span>
                 </td>
                 <td class="text-dark fw-semibold" style="font-size: 0.84rem;">
-                    ${escapeHtml(p.doctor_name || 'Dr. Duty Doctor')}
+                    ${highlightedDoc}
                 </td>
                 <td class="text-dark" style="font-size: 0.84rem;">
-                    <strong>${escapeHtml(p.ipd_ward)}</strong> <span class="badge bg-light text-secondary border ms-1 font-monospace" style="font-size: 0.72rem;">Bed ${escapeHtml(p.ipd_bed)}</span>
+                    <strong>${highlightedWard}</strong> <span class="badge bg-light text-secondary border ms-1 font-monospace" style="font-size: 0.72rem;">Bed ${highlightedBed}</span>
                 </td>
                 <td class="text-muted small font-monospace" style="font-size: 0.78rem;">
                     ${escapeHtml(p.admission_date || '-')}
@@ -1592,28 +1784,56 @@ function renderAdmittedPatientsTable(patients) {
 }
 
 function filterPatientsTable() {
-    const searchVal = (document.getElementById('tablePatientSearch')?.value || '').trim().toLowerCase();
+    const searchInp = document.getElementById('tablePatientSearch');
+    const searchVal = (searchInp?.value || '').trim().toLowerCase();
     const wardVal = document.getElementById('tableWardFilter')?.value || 'ALL';
+    const btnClear = document.getElementById('btnClearTableSearch');
 
-    const filtered = ipdPatientsList.filter(p => {
-        if (wardVal !== 'ALL' && (p.ipd_ward || '').toLowerCase() !== wardVal.toLowerCase()) {
-            return false;
+    if (btnClear) {
+        if (searchVal) btnClear.classList.remove('d-none');
+        else btnClear.classList.add('d-none');
+    }
+
+    let filtered = ipdPatientsList.filter(p => matchIpdPatient(p, searchVal, wardVal));
+
+    filtered.sort((a, b) => {
+        if (searchVal) {
+            const rankA = rankIpdPatient(a, searchVal);
+            const rankB = rankIpdPatient(b, searchVal);
+            if (rankA !== rankB) return rankB - rankA;
         }
-        if (!searchVal) return true;
-
-        const name = (p.name || '').toLowerCase();
-        const uhid = (p.hospital_uhid || '').toLowerCase();
-        const ipdNo = (p.ipd_admission_no || '').toLowerCase();
-        const mob = (p.mobile || '').toLowerCase();
-        const doc = (p.doctor_name || '').toLowerCase();
-        const ward = (p.ipd_ward || '').toLowerCase();
-        const bed = (p.ipd_bed || '').toLowerCase();
-
-        return name.includes(searchVal) || uhid.includes(searchVal) || ipdNo.includes(searchVal) || 
-               mob.includes(searchVal) || doc.includes(searchVal) || ward.includes(searchVal) || bed.includes(searchVal);
+        const nameA = (a.name || '').replace(/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i, '').trim();
+        const nameB = (b.name || '').replace(/^(mr\.|mrs\.|miss|master|baby|b\/o|s\/o|d\/o|w\/o|dr\.)\s+/i, '').trim();
+        return nameA.localeCompare(nameB);
     });
 
     renderAdmittedPatientsTable(filtered);
+}
+
+function clearTableSearch() {
+    const inp = document.getElementById('tablePatientSearch');
+    if (inp) {
+        inp.value = '';
+        inp.focus();
+    }
+    const btnClear = document.getElementById('btnClearTableSearch');
+    if (btnClear) btnClear.classList.add('d-none');
+    filterPatientsTable();
+}
+
+function onTableSearchKeydown(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentFilteredPatients && currentFilteredPatients.length > 0) {
+            openDispenseForPatientIndex(0);
+        }
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const firstRow = document.querySelector('.ipd-table-row');
+        if (firstRow) firstRow.focus();
+    } else if (e.key === 'Escape') {
+        clearTableSearch();
+    }
 }
 
 function resetTableFilters() {
@@ -1845,6 +2065,14 @@ function onPatientSearchInput(query) {
 
     query = (query || '').trim().toLowerCase();
 
+    if (!query) {
+        list.classList.add('d-none');
+        list.innerHTML = '';
+        activePatientSuggestions = [];
+        selectedPatientIndex = -1;
+        return;
+    }
+
     // 1. Filter by Query and Ward
     let matches = ipdPatientsList.filter(p => {
         // Ward filter
@@ -1852,8 +2080,6 @@ function onPatientSearchInput(query) {
             const w = (p.ipd_ward || '').trim().toLowerCase();
             if (w !== patientWardFilter.toLowerCase()) return false;
         }
-
-        if (!query) return true;
 
         const rawName = (p.name || '').trim().toLowerCase();
         const uhid = (p.hospital_uhid || '').trim().toLowerCase();
@@ -1983,37 +2209,63 @@ function onPatientSearchInput(query) {
 
 function onPatientSearchFocus() {
     const input = document.getElementById('ipdPatientSearchInput');
-    const val = input ? input.value : '';
-    onPatientSearchInput(val);
+    const val = input ? input.value.trim() : '';
+    if (val) {
+        onPatientSearchInput(val);
+    } else {
+        const list = document.getElementById('patientSuggestionsList');
+        if (list) {
+            list.classList.add('d-none');
+            list.innerHTML = '';
+        }
+    }
 }
 
 function onPatientSearchKeydown(e) {
     const list = document.getElementById('patientSuggestionsList');
-    if (list.classList.contains('d-none') || activePatientSuggestions.length === 0) {
-        return;
+    const isShowing = list && !list.classList.contains('d-none') && activePatientSuggestions.length > 0;
+
+    if (isShowing) {
+        const items = list.querySelectorAll('.patient-suggest-item');
+        if (items.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedPatientIndex = (selectedPatientIndex + 1) % items.length;
+                updateActivePatientItem(items);
+                return;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedPatientIndex = (selectedPatientIndex - 1 + items.length) % items.length;
+                updateActivePatientItem(items);
+                return;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedPatientIndex >= 0 && selectedPatientIndex < items.length) {
+                    items[selectedPatientIndex].click();
+                } else if (activePatientSuggestions.length > 0) {
+                    selectPatientById(activePatientSuggestions[0].patient_id);
+                }
+                return;
+            } else if (e.key === 'Escape') {
+                list.classList.add('d-none');
+                selectedPatientIndex = -1;
+                return;
+            }
+        }
     }
 
-    const items = list.querySelectorAll('.patient-suggest-item');
-    if (items.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
+    // When Enter or Tab is pressed on Patient input:
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
         e.preventDefault();
-        selectedPatientIndex = (selectedPatientIndex + 1) % items.length;
-        updateActivePatientItem(items);
-    } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        selectedPatientIndex = (selectedPatientIndex - 1 + items.length) % items.length;
-        updateActivePatientItem(items);
-    } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (selectedPatientIndex >= 0 && selectedPatientIndex < items.length) {
-            items[selectedPatientIndex].click();
-        } else if (activePatientSuggestions.length > 0) {
+        if (isShowing && activePatientSuggestions.length > 0) {
             selectPatientById(activePatientSuggestions[0].patient_id);
+        } else {
+            const medInput = document.getElementById('chargeMedicineInput');
+            if (medInput) {
+                medInput.focus();
+                medInput.select();
+            }
         }
-    } else if (e.key === 'Escape') {
-        list.classList.add('d-none');
-        selectedPatientIndex = -1;
     }
 }
 
@@ -2138,23 +2390,57 @@ function highlightMatch(text, query) {
     if (!query) return escapeHtml(text);
     const escaped = escapeHtml(text);
     const qEscaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(^|\\s)(${qEscaped})`, 'gi');
-    return escaped.replace(regex, '$1<span class="search-highlight">$2</span>');
+    const regex = new RegExp(`(${qEscaped})`, 'gi');
+    return escaped.replace(regex, '<span class="search-highlight">$1</span>');
 }
 
 function getMedicineIconInfo(m) {
     const dosage = (m.dosage_form || '').toLowerCase();
     const cat = (m.category || '').toLowerCase();
-    if (dosage.includes('syrup') || cat.includes('syrup') || dosage.includes('liquid') || dosage.includes('suspension')) {
-        return { icon: 'bi-droplet-half', cls: 'syrup' };
+    const name = (m.medicine_name || '').toLowerCase();
+
+    // 1. Injections / IV / Syringe / Vials / Ampoules / Infusion
+    if (dosage.includes('inj') || cat.includes('inj') || name.includes('inj') ||
+        dosage.includes('iv') || dosage.includes('infusion') || dosage.includes('vial') ||
+        dosage.includes('ampoule') || dosage.includes('syringe') || cat.includes('inject')) {
+        return { icon: 'ti ti-syringe', cls: 'injection', bg: '#fce7f3', color: '#db2777' };
     }
-    if (dosage.includes('inj') || cat.includes('inj') || dosage.includes('iv') || dosage.includes('infusion')) {
-        return { icon: 'bi-eyedropper', cls: 'injection' };
+
+    // 2. Syrups / Liquids / Suspensions / Solutions / Oral Drops
+    if (dosage.includes('syrup') || cat.includes('syrup') || name.includes('syrup') ||
+        dosage.includes('susp') || dosage.includes('liquid') || dosage.includes('oral') ||
+        dosage.includes('solution') || cat.includes('susp')) {
+        return { icon: 'ti ti-bottle', cls: 'syrup', bg: '#fef3c7', color: '#d97706' };
     }
-    if (dosage.includes('tab') || dosage.includes('cap') || cat.includes('tab') || cat.includes('cap')) {
-        return { icon: 'bi-capsule', cls: 'tablet' };
+
+    // 3. Inhaler / MDI / Spray / Respules
+    if (dosage.includes('inhal') || cat.includes('inhal') || name.includes('inhal') ||
+        dosage.includes('spray') || name.includes('mdi') || dosage.includes('resp') ||
+        name.includes('spray')) {
+        return { icon: 'ti ti-spray', cls: 'inhaler', bg: '#ecfeff', color: '#0891b2' };
     }
-    return { icon: 'bi-prescription2', cls: 'general' };
+
+    // 4. Drops (Eye / Ear)
+    if (dosage.includes('drop') || cat.includes('drop') || name.includes('drop')) {
+        return { icon: 'ti ti-droplet', cls: 'drops', bg: '#e0f2fe', color: '#0284c7' };
+    }
+
+    // 5. Creams / Ointments / Gels / Balms
+    if (dosage.includes('cream') || dosage.includes('ointment') || dosage.includes('gel') ||
+        cat.includes('cream') || cat.includes('ointment') || name.includes('gel') ||
+        name.includes('cream') || name.includes('ointment')) {
+        return { icon: 'ti ti-bandage', cls: 'ointment', bg: '#fdf4ff', color: '#a21caf' };
+    }
+
+    // 6. Tablets / Capsules / Pills / Strip / Lozenges / Cap / Tab
+    if (dosage.includes('tab') || cat.includes('tab') || name.includes('tablet') || name.includes(' tab') ||
+        dosage.includes('cap') || cat.includes('cap') || name.includes('capsule') || name.includes(' cap') ||
+        dosage.includes('pill') || dosage.includes('strip') || dosage.includes('lozenge')) {
+        return { icon: 'ti ti-pill', cls: 'tablet', bg: '#eff6ff', color: '#2563eb' };
+    }
+
+    // Default for medicines (Tablet / Pill icon)
+    return { icon: 'ti ti-pill', cls: 'tablet', bg: '#eff6ff', color: '#2563eb' };
 }
 
 function getExpiryStatus(dateStr) {
@@ -2289,37 +2575,37 @@ function onMedicineSearchInput(query) {
 
     query = (query || '').trim().toLowerCase();
 
-    // Do NOT show dropdown if input is empty - only visible as user searches by letters
     if (!query) {
-        suggestionsBox.innerHTML = '';
         suggestionsBox.classList.add('d-none');
+        suggestionsBox.innerHTML = '';
         activeSuggestions = [];
         selectedSuggestionIndex = -1;
         return;
     }
 
-    // Search across ALL catalog medicines without category restriction
     const qLower = query.toLowerCase();
     let matches = catalogMedicines.filter(m => {
         const name = (m.medicine_name || '').trim().toLowerCase();
         const generic = (m.generic_name || '').trim().toLowerCase();
+        const comp = (m.composition || '').trim().toLowerCase();
         const barcode = (m.barcode || '').trim().toLowerCase();
         if (barcode && barcode.includes(qLower)) return true;
         if (name.includes(qLower)) return true;
         if (generic && generic.includes(qLower)) return true;
+        if (comp && comp.includes(qLower)) return true;
         return false;
     });
 
-    // Sort by relevance: first word starts with query first, then alphabetical
-    matches.sort((a, b) => {
-        const nameA = (a.medicine_name || '').trim().toLowerCase();
-        const nameB = (b.medicine_name || '').trim().toLowerCase();
-        const aStartsFirst = nameA.startsWith(qLower);
-        const bStartsFirst = nameB.startsWith(qLower);
-        if (aStartsFirst && !bStartsFirst) return -1;
-        if (!aStartsFirst && bStartsFirst) return 1;
-        return nameA.localeCompare(nameB);
-    });
+        // Sort by relevance: first word starts with query first, then alphabetical
+        matches.sort((a, b) => {
+            const nameA = (a.medicine_name || '').trim().toLowerCase();
+            const nameB = (b.medicine_name || '').trim().toLowerCase();
+            const aStartsFirst = nameA.startsWith(qLower);
+            const bStartsFirst = nameB.startsWith(qLower);
+            if (aStartsFirst && !bStartsFirst) return -1;
+            if (!aStartsFirst && bStartsFirst) return 1;
+            return nameA.localeCompare(nameB);
+        });
 
     activeSuggestions = matches;
     selectedSuggestionIndex = -1;
@@ -2329,7 +2615,7 @@ function onMedicineSearchInput(query) {
             <div class="p-3 text-center text-muted">
                 <i class="ti ti-package-off text-secondary opacity-50 d-block fs-2 mb-1"></i>
                 <div class="fw-semibold small text-dark">No matching medicines found for "${escapeHtml(query)}"</div>
-                <div class="small text-muted mt-1">Try typing brand name or chemical composition</div>
+                <div class="small text-muted mt-1">Try typing brand name, generic name, or active composition</div>
             </div>
         `;
         suggestionsBox.classList.remove('d-none');
@@ -2354,11 +2640,12 @@ function onMedicineSearchInput(query) {
 
         const highlightedName = highlightMatch(m.medicine_name, query);
         const genericStr = m.generic_name ? highlightMatch(m.generic_name, query) : '';
+        const compStr = m.composition ? highlightMatch(m.composition, query) : '';
         const dosageStr = m.dosage_form || m.unit || 'unit';
         const catStr = m.category || 'General';
 
-        const iconBg = iconInfo.cls === 'tablet' ? '#eff6ff' : iconInfo.cls === 'syrup' ? '#fef3c7' : iconInfo.cls === 'injection' ? '#fce7f3' : '#f1f5f9';
-        const iconColor = iconInfo.cls === 'tablet' ? '#2563eb' : iconInfo.cls === 'syrup' ? '#d97706' : iconInfo.cls === 'injection' ? '#db2777' : '#64748b';
+        const iconBg = iconInfo.bg || '#eff6ff';
+        const iconColor = iconInfo.color || '#2563eb';
         const mfgRate = parseFloat(m.purchase_price || 0).toFixed(2);
         const expDate = m.expiry_date || 'N/A';
         const expStatus = getExpiryStatus(expDate);
@@ -2366,20 +2653,25 @@ function onMedicineSearchInput(query) {
 
         html += `
             <div class="med-suggest-item ${isOutOfStock ? 'disabled' : ''}" data-index="${idx}" onclick="selectMedicineSuggestion(${m.medicine_id})"
-                 style="background: #ffffff !important; background-color: #ffffff !important; display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 14px !important; border-bottom: 1px solid #f1f5f9 !important; cursor: pointer !important; text-decoration: none !important;">
+                 style="display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 14px !important; border-bottom: 1px solid #f1f5f9 !important; cursor: pointer !important; text-decoration: none !important;">
                 <div class="d-flex align-items-center me-2 text-start flex-grow-1" style="min-width: 0;">
-                    <div class="med-icon-box ${iconInfo.cls}" style="width: 38px; height: 38px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.1rem; margin-right: 12px; background-color: ${iconBg}; color: ${iconColor};">
-                        <i class="bi ${iconInfo.icon}"></i>
+                    <div class="med-icon-box ${iconInfo.cls}" style="width: 38px; height: 38px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.25rem; margin-right: 12px; background-color: ${iconBg}; color: ${iconColor};">
+                        <i class="${iconInfo.icon}"></i>
                     </div>
                     <div style="min-width: 0;">
                         <div class="med-name-title text-truncate" style="font-weight: 600; font-size: 0.90rem; color: #0f172a; line-height: 1.28;">${highlightedName}</div>
+                        ${compStr ? `
+                            <div class="med-composition-badge mt-0.5" style="font-size: 0.72rem; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 3px;">
+                                <i class="ti ti-flask"></i><span class="fw-bold">Contains:</span> ${compStr}
+                            </div>
+                        ` : ''}
                         <div class="med-meta-desc" style="font-size: 0.74rem; color: #64748b; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <span class="med-category-chip" style="font-size: 0.66rem; font-weight: 600; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">${escapeHtml(catStr)}</span>
                             <span class="badge bg-light text-secondary border" style="font-size: 0.68rem;"><i class="bi bi-building me-1 text-primary"></i>${escapeHtml(manufacturer)}</span>
                             <span class="badge ${expStatus.cls}" style="font-size: 0.68rem; background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border: 1px solid ${expStatus.badgeBorder} !important;" title="${expStatus.tag}: ${expStatus.label}">
                                 <i class="bi ${expStatus.icon} me-1"></i>Exp: ${escapeHtml(expDate)} <span class="fw-bold">(${expStatus.label})</span>
                             </span>
-                            <span class="text-truncate">${genericStr ? genericStr + ' &bull; ' : ''}${escapeHtml(dosageStr)}</span>
+                            <span class="text-truncate">${genericStr && genericStr !== compStr ? genericStr + ' &bull; ' : ''}${escapeHtml(dosageStr)}</span>
                         </div>
                     </div>
                 </div>
@@ -2406,11 +2698,14 @@ function onMedicineSearchInput(query) {
 function onMedicineSearchFocus() {
     const input = document.getElementById('chargeMedicineInput');
     const val = input ? input.value.trim() : '';
-    if (val.length > 0) {
+    if (val) {
         onMedicineSearchInput(val);
     } else {
         const suggestionsBox = document.getElementById('medicineSuggestionsList');
-        if (suggestionsBox) suggestionsBox.classList.add('d-none');
+        if (suggestionsBox) {
+            suggestionsBox.classList.add('d-none');
+            suggestionsBox.innerHTML = '';
+        }
     }
 }
 
@@ -2463,12 +2758,42 @@ function onMedicineInputKeydown(e) {
         }
     }
 
-    // When search is empty or no suggestions showing:
-    // Pressing Enter, Tab, or ArrowDown escapes the search box and slides down into the table rows
-    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    // When Enter is pressed in medicine search:
+    if (e.key === 'Enter') {
+        if (activeSuggestions.length > 0) {
+            e.preventDefault();
+            selectMedicineSuggestion(activeSuggestions[0].medicine_id);
+            return;
+        }
+    }
+
+    // When Tab is pressed: directly triggers and opens Proceed to Billing Preview modal!
+    if (e.key === 'Tab' && !e.shiftKey) {
         if (cart.length > 0) {
             e.preventDefault();
-            focusCartRow(0);
+            if (suggestionsBox) suggestionsBox.classList.add('d-none');
+            openBillingPreviewModal();
+            return;
+        }
+    }
+
+    // ArrowDown redirects directly into the quantity input of the selected medicine
+    if (e.key === 'ArrowDown') {
+        if (cart.length > 0) {
+            e.preventDefault();
+            focusCartQty(0);
+            return;
+        }
+    }
+
+    // ArrowUp redirects back up to the Patient search input if present
+    if (e.key === 'ArrowUp') {
+        const pInput = document.getElementById('tablePatientSearch') || document.getElementById('patientSearchInput');
+        if (pInput) {
+            e.preventDefault();
+            pInput.focus();
+            pInput.select();
+            return;
         }
     }
 }
@@ -2637,6 +2962,8 @@ function selectMedicineSuggestion(medicineId) {
         cart.push({
             medicine_id: med.medicine_id,
             medicine_name: med.medicine_name,
+            generic_name: med.generic_name || '',
+            composition: med.composition || '',
             batch_id: batchId,
             batch_number: batchNumber,
             manufacturer: manufacturer,
@@ -2651,14 +2978,15 @@ function selectMedicineSuggestion(medicineId) {
         });
     }
 
+    const targetIdx = existingIdx !== -1 ? existingIdx : cart.length - 1;
+
     // Immediately render updated cart
     renderCart();
 
-    // Clear medicine search input and refocus for rapid subsequent addition
+    // Clear medicine search input
     const medInput = document.getElementById('chargeMedicineInput');
     if (medInput) {
         medInput.value = '';
-        medInput.focus();
     }
     const catInput = document.getElementById('chargeCategorySelect');
     if (catInput) catInput.value = '';
@@ -2671,6 +2999,11 @@ function selectMedicineSuggestion(medicineId) {
     }
     selectedSuggestionIndex = -1;
     activeSuggestions = [];
+
+    // Automatically focus the quantity (QTY) field of the selected medicine
+    setTimeout(() => {
+        focusCartQty(targetIdx);
+    }, 60);
 }
 
 function onQtyKeydown(e) {
@@ -2740,7 +3073,7 @@ function renderCart() {
     if (cart.length === 0) {
         tbody.innerHTML = `
             <tr id="emptyCartRow">
-                <td colspan="8" class="text-center py-4 text-muted small">
+                <td colspan="9" class="text-center py-4 text-muted small">
                     No charges added yet. Search a medicine and charge above.
                 </td>
             </tr>
@@ -2795,18 +3128,18 @@ function renderCart() {
             });
 
             expiryCellHtml = `
-                <div class="dropdown d-inline-block position-relative batch-dropdown-container" style="white-space: nowrap;">
+                <div class="dropdown d-inline-block position-relative batch-dropdown-container">
                     <button type="button" 
                             class="btn btn-sm py-1 px-2.5 font-monospace d-inline-flex align-items-center gap-1.5 border shadow-2xs expiry-picker-btn text-nowrap"
-                            style="background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border-color: ${expStatus.badgeBorder} !important; font-size: 0.76rem; border-radius: 6px; font-weight: 600; white-space: nowrap !important; text-decoration: none;"
+                            style="background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border-color: ${expStatus.badgeBorder} !important; font-size: 0.76rem; border-radius: 6px; font-weight: 600;"
                             onclick="toggleBatchExpiryMenu(event, ${idx})"
                             title="Click to view & switch between ${batches.length} available batches">
                         <i class="bi ${expStatus.icon}"></i>
-                        <span style="white-space: nowrap;">${escapeHtml(item.expiry_date || 'N/A')}</span>
-                        <span class="small opacity-75" style="white-space: nowrap;">(${expStatus.label})</span>
-                        <span class="badge bg-white text-dark border ms-1 px-1.5 py-0.5" style="font-size: 0.68rem; font-weight: 700; white-space: nowrap;">${batches.length} batches ▾</span>
+                        <span>${escapeHtml(item.expiry_date || 'N/A')}</span>
+                        <span class="small opacity-75">(${expStatus.label})</span>
+                        <span class="badge bg-white text-dark border ms-1 px-1.5 py-0.5" style="font-size: 0.68rem; font-weight: 700;">${batches.length} batches ▾</span>
                     </button>
-                    <div id="batchExpiryMenu_${idx}" class="dropdown-menu shadow-lg p-0 border-0 batch-expiry-menu d-none position-absolute" style="top: 100%; left: 0; margin-top: 4px; z-index: 1050; min-width: 280px;">
+                    <div id="batchExpiryMenu_${idx}" class="batch-expiry-menu shadow-lg p-0 border d-none" style="min-width: 320px;">
                         <div class="px-3 py-2 border-bottom bg-light d-flex justify-content-between align-items-center rounded-top-2" style="font-size: 0.74rem;">
                             <span class="fw-bold text-dark"><i class="ti ti-layers me-1 text-primary"></i>Select Batch / Expiry</span>
                             <span class="badge bg-primary-subtle text-primary border" style="font-size: 0.68rem;">FEFO Earliest First</span>
@@ -2827,6 +3160,8 @@ function renderCart() {
             `;
         }
 
+        const containsRemark = item.composition || item.generic_name || '';
+
         html += `
             <tr class="align-middle cart-row" tabindex="0" data-cart-index="${idx}" onkeydown="onCartRowKeydown(event, ${idx})" onfocus="this.classList.add('active-row-focus')" onblur="this.classList.remove('active-row-focus')">
                 <td class="text-center text-muted fw-semibold small">${idx + 1}</td>
@@ -2837,27 +3172,99 @@ function renderCart() {
                         ${item.manufacturer ? '<span class="text-primary fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}Cat: ${escapeHtml(item.category)} &bull; ${escapeHtml(item.unit)} &bull; Stock: ${item.max_stock}
                     </div>
                 </td>
+                <td class="align-middle">
+                    ${containsRemark ? `
+                        <div class="small fw-semibold d-inline-flex align-items-center gap-1.5 px-2 py-1 rounded" style="font-size: 0.76rem; color: #047857; background-color: #ecfdf5; border: 1px solid #a7f3d0; max-width: 100%; word-break: break-word;">
+                            <i class="ti ti-flask flex-shrink-0" style="font-size: 0.85rem;"></i>
+                            <span>${escapeHtml(containsRemark)}</span>
+                        </div>
+                    ` : '<span class="text-muted small fst-italic" style="font-size: 0.75rem;">—</span>'}
+                </td>
                 <td class="align-middle" style="white-space: nowrap;">${expiryCellHtml}</td>
                 <td class="text-end font-monospace text-muted align-middle" style="font-size: 0.84rem;">₹${(item.purchase_price || 0).toFixed(2)}</td>
                 <td class="text-end fw-bold text-dark font-monospace align-middle" style="font-size: 0.88rem;">₹${item.price.toFixed(2)}</td>
                 <td class="text-center align-middle">
-                    <input type="number" min="1" max="${item.max_stock}" class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input shadow-xs" style="width: 60px; height: 32px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" onkeydown="onCartQtyKeydown(event, ${idx})" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
+                    <input type="number" id="cart_qty_${idx}" min="1" max="${item.max_stock}" class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input shadow-xs" style="width: 60px; height: 32px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" onkeydown="onCartQtyKeydown(event, ${idx})" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
                 </td>
                 <td class="text-end fw-bold text-dark font-monospace item-line-total align-middle" style="font-size: 0.88rem;">₹${lineTotal.toFixed(2)}</td>
                 <td class="text-center align-middle">
-                    <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-0 rounded-2 shadow-xs" style="width: 32px; height: 32px;" onclick="removeItemFromCart(${idx})" title="Remove item">
-                        <i class="ti ti-trash fs-6"></i>
+                    <button type="button" class="btn btn-sm btn-outline-danger p-1 rounded-2" onclick="removeItemFromCart(${idx})" title="Remove">
+                        <i class="ti ti-trash"></i>
                     </button>
                 </td>
             </tr>
         `;
     });
 
+    // Add inline quick helper / search indicator row at the bottom of the table
+    html += `
+        <tr class="table-keyboard-helper-row" style="background-color: #f8fafc; border-top: 1px dashed #cbd5e1;">
+            <td colspan="9" class="py-2.5 px-3">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2 small">
+                        <button type="button" class="btn btn-sm btn-outline-primary py-1 px-3 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold" onclick="const mi=document.getElementById('chargeMedicineInput'); if(mi){mi.focus(); mi.select();}">
+                            <i class="bi bi-search"></i>
+                            <span>Add More Medicines</span>
+                            <kbd class="bg-white text-dark border px-1" style="font-size: 0.68rem;">Enter / F2</kbd>
+                        </button>
+                        <span class="text-muted" style="font-size: 0.76rem;">Type medicine name &amp; press <kbd class="bg-white text-dark border px-1">Enter</kbd> to add continuously</span>
+                    </div>
+                    <div class="small text-end">
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 rounded-2 d-inline-flex align-items-center gap-1.5" style="font-size: 0.76rem; font-weight: 600;">
+                            <i class="bi bi-arrow-right-circle-fill"></i>
+                            <span>All medicines added? Press <kbd class="bg-white text-dark border px-1.5 py-0.5 rounded shadow-2xs fw-bold">Tab</kbd> to Proceed to Billing</span>
+                        </span>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `;
+
     tbody.innerHTML = html;
     recalculateCartTotalsSummary();
 }
 
-function focusCartRow(idx) {
+function toggleBatchExpiryMenu(e, cartIdx) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const menu = document.getElementById(`batchExpiryMenu_${cartIdx}`);
+    if (!menu) return;
+    const isHidden = menu.classList.contains('d-none');
+    document.querySelectorAll('.batch-expiry-menu').forEach(m => m.classList.add('d-none'));
+    if (isHidden) {
+        menu.classList.remove('d-none');
+    }
+}
+
+function selectCartBatch(cartIdx, batchId, batchNumber) {
+    if (!cart[cartIdx]) return;
+    const med = catalogMedicines.find(m => m.medicine_id === cart[cartIdx].medicine_id);
+    if (!med || !med.batches) return;
+    
+    const targetBatch = med.batches.find(b => (batchId > 0 && b.batch_id == batchId) || b.batch_number === batchNumber);
+    if (!targetBatch) return;
+
+    cart[cartIdx].batch_id = targetBatch.batch_id;
+    cart[cartIdx].batch_number = targetBatch.batch_number;
+    cart[cartIdx].expiry_date = targetBatch.expiry_date;
+    cart[cartIdx].purchase_price = targetBatch.purchase_price;
+    if (targetBatch.sale_price > 0) {
+        cart[cartIdx].price = targetBatch.sale_price;
+    }
+    cart[cartIdx].max_stock = targetBatch.stock > 0 ? targetBatch.stock : 999;
+    if (cart[cartIdx].quantity > cart[cartIdx].max_stock) {
+        cart[cartIdx].quantity = cart[cartIdx].max_stock;
+        showAutoAddNotice(`Quantity adjusted to ${cart[cartIdx].max_stock} (Max stock for batch ${targetBatch.batch_number})`, 'warning');
+    } else {
+        showAutoAddNotice(`Switched to Batch ${targetBatch.batch_number} (Exp: ${targetBatch.expiry_date})`, 'success');
+    }
+
+    renderCart();
+}
+
+function focusCartQty(idx) {
     if (cart.length === 0) return;
     
     if (idx < 0) {
@@ -2881,13 +3288,19 @@ function focusCartRow(idx) {
         return;
     }
 
-    const targetRow = document.querySelector(`.cart-row[data-cart-index="${idx}"]`);
-    if (targetRow) {
+    const qtyInp = document.getElementById(`cart_qty_${idx}`);
+    if (qtyInp) {
         document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
-        targetRow.focus();
-        targetRow.classList.add('active-row-focus');
-        targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const row = qtyInp.closest('.cart-row');
+        if (row) row.classList.add('active-row-focus');
+        qtyInp.focus();
+        qtyInp.select();
+        qtyInp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+}
+
+function focusCartRow(idx) {
+    focusCartQty(idx);
 }
 
 function onCartRowKeydown(e, idx) {
@@ -2897,34 +3310,21 @@ function onCartRowKeydown(e, idx) {
 
     if (e.key === 'ArrowDown') {
         e.preventDefault();
-        focusCartRow(idx + 1);
+        focusCartQty(idx + 1);
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        focusCartRow(idx - 1);
-    } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        const firstInteractive = e.currentTarget.querySelector('.expiry-picker-btn, .cart-qty-input, button');
-        if (firstInteractive) {
-            firstInteractive.focus();
-            if (firstInteractive.select) firstInteractive.select();
-        }
-    } else if (e.key === 'ArrowLeft') {
-        // Bubble to SpatialNavigator to navigate left towards sidebar
+        focusCartQty(idx - 1);
     } else if (e.key === 'Enter') {
         e.preventDefault();
-        const qty = e.currentTarget.querySelector('.cart-qty-input');
-        if (qty) {
-            qty.focus();
-            qty.select();
-        }
+        focusCartQty(idx);
     } else if (e.key === 'Escape') {
         e.preventDefault();
-        focusCartRow(-1);
+        focusCartQty(-1);
     } else if (e.key === 'Delete' || (e.ctrlKey && e.key === 'Delete')) {
         e.preventDefault();
         removeItemFromCart(idx);
     } else if (e.key >= '1' && e.key <= '9') {
-        const qty = e.currentTarget.querySelector('.cart-qty-input');
+        const qty = document.getElementById(`cart_qty_${idx}`);
         if (qty) {
             qty.focus();
             qty.value = e.key;
@@ -2936,32 +3336,46 @@ function onCartRowKeydown(e, idx) {
 function onCartQtyKeydown(e, idx) {
     if (e.key === 'Enter') {
         e.preventDefault();
-        focusCartRow(idx + 1);
-    } else if (e.key === 'Escape') {
+        e.stopPropagation();
+        // Return to medicine search to add next medicine
+        const searchInput = document.getElementById('chargeMedicineInput');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    } else if (e.key === 'Tab') {
         e.preventDefault();
-        focusCartRow(-1);
+        if (e.shiftKey) {
+            if (idx > 0) {
+                focusCartQty(idx - 1);
+            } else {
+                const searchInput = document.getElementById('chargeMedicineInput');
+                if (searchInput) searchInput.focus();
+            }
+        } else {
+            if (cart.length > 0) {
+                openBillingPreviewModal();
+            } else {
+                const proceedBtn = document.getElementById('btnProceedPreview') || document.getElementById('btnSubmitSale');
+                if (proceedBtn) proceedBtn.focus();
+            }
+        }
     } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        focusCartRow(idx - 1);
+        focusCartQty(idx - 1);
     } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        focusCartRow(idx + 1);
-    } else if (e.key === 'ArrowLeft') {
-        const row = e.currentTarget.closest('tr.cart-row');
-        const picker = row ? row.querySelector('.expiry-picker-btn') : null;
-        if (picker) {
-            e.preventDefault();
-            picker.focus();
-        } else if (row) {
-            e.preventDefault();
-            row.focus();
-        }
-    } else if (e.key === 'ArrowRight') {
-        const row = e.currentTarget.closest('tr.cart-row');
-        const removeBtn = row ? row.querySelector('button[title*="Remove"]') : null;
-        if (removeBtn) {
-            e.preventDefault();
-            removeBtn.focus();
+        if (idx < cart.length - 1) {
+            focusCartQty(idx + 1);
+        } else {
+            if (cart.length > 0) {
+                openBillingPreviewModal();
+            } else {
+                const proceedBtn = document.getElementById('btnProceedPreview') || document.getElementById('btnSubmitSale');
+                if (proceedBtn) proceedBtn.focus();
+            }
         }
     } else if (e.key === 'Delete' || (e.key === 'Backspace' && e.ctrlKey)) {
         e.preventDefault();
@@ -3220,6 +3634,11 @@ function openBillingPreviewModal() {
                 <td class="text-center text-muted fw-semibold py-2.5 px-3">${idx + 1}</td>
                 <td class="text-start py-2.5 px-3">
                     <div class="fw-bold text-dark text-truncate" style="max-width: 380px;">${escapeHtml(item.medicine_name)}</div>
+                    ${item.composition || item.generic_name ? `
+                        <div class="small mt-0.5" style="font-size: 0.70rem; color: #047857;">
+                            <i class="ti ti-flask me-0.5"></i><span class="fw-semibold">Contains:</span> ${escapeHtml(item.composition || item.generic_name)}
+                        </div>
+                    ` : ''}
                     <div class="text-muted small mt-0.5 d-flex align-items-center flex-wrap" style="font-size: 0.74rem; gap: 4px;">
                         ${item.manufacturer ? '<span class="text-primary fw-medium">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}
                         <span>${escapeHtml(item.category)}</span> &bull; 
@@ -3244,8 +3663,78 @@ function openBillingPreviewModal() {
 
     recalcModalTotals();
 
-    const previewModal = new bootstrap.Modal(document.getElementById('billingPreviewModal'));
+    const previewModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('billingPreviewModal'));
     previewModal.show();
+
+    // Automatically focus the Settlement Mode when modal opens
+    setTimeout(() => {
+        const modeSelect = document.getElementById('modalPaymentMode');
+        if (modeSelect) {
+            modeSelect.focus();
+        }
+    }, 350);
+}
+
+function handleModalModeKeydown(e) {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        const discInp = document.getElementById('modalDiscountValue');
+        if (discInp) { discInp.focus(); discInp.select(); }
+    }
+}
+
+function handleModalDiscountKeydown(e) {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        const confirmBtn = document.getElementById('modalBtnConfirmSale');
+        if (confirmBtn) confirmBtn.focus();
+    } else if (e.key === 'ArrowLeft' && e.altKey) {
+        e.preventDefault();
+        setDiscountMode('PERCENT');
+    } else if (e.key === 'ArrowRight' && e.altKey) {
+        e.preventDefault();
+        setDiscountMode('FLAT');
+    }
+}
+
+function setDiscountMode(mode) {
+    const hiddenType = document.getElementById('modalDiscountType');
+    if (hiddenType) hiddenType.value = mode;
+
+    const btnPercent = document.getElementById('btnDiscPercent');
+    const btnFlat = document.getElementById('btnDiscFlat');
+    const dInput = document.getElementById('modalDiscountValue');
+    const dAddon = document.getElementById('modalDiscountAddon');
+
+    if (mode === 'FLAT') {
+        if (btnFlat) btnFlat.classList.add('active');
+        if (btnPercent) btnPercent.classList.remove('active');
+        if (dAddon) dAddon.textContent = '₹';
+        if (dInput) {
+            dInput.step = '1';
+            dInput.removeAttribute('max');
+            dInput.placeholder = '0';
+        }
+    } else {
+        if (btnPercent) btnPercent.classList.add('active');
+        if (btnFlat) btnFlat.classList.remove('active');
+        if (dAddon) dAddon.textContent = '%';
+        if (dInput) {
+            dInput.step = '1';
+            dInput.max = '50';
+            dInput.placeholder = '0';
+        }
+    }
+    recalcModalTotals();
+    if (dInput) {
+        dInput.focus();
+        dInput.select();
+    }
+}
+
+function onDiscountTypeChange() {
+    const dType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    setDiscountMode(dType);
 }
 
 function recalcModalTotals() {
@@ -3257,9 +3746,21 @@ function recalcModalTotals() {
         totalGst += itemTotal * ((item.gst_percent || 0) / 100);
     });
 
-    const discPercent = Math.min(50, Math.max(0, parseFloat(document.getElementById('modalDiscountPercent').value) || 0));
-    const discountAmt = subtotal * (discPercent / 100);
-    const taxable = subtotal - discountAmt;
+    const discType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const rawVal = Math.max(0, parseInt(document.getElementById('modalDiscountValue')?.value, 10) || 0);
+    
+    let discountAmt = 0;
+    let effectivePercent = 0;
+
+    if (discType === 'FLAT') {
+        discountAmt = Math.min(subtotal, rawVal);
+        effectivePercent = subtotal > 0 ? (discountAmt / subtotal) * 100 : 0;
+    } else {
+        effectivePercent = Math.min(50, rawVal);
+        discountAmt = subtotal * (effectivePercent / 100);
+    }
+
+    const taxable = Math.max(0, subtotal - discountAmt);
     const grandTotal = Math.round((taxable + totalGst) * 100) / 100;
 
     document.getElementById('modalLblSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
@@ -3268,7 +3769,7 @@ function recalcModalTotals() {
         if (discountAmt > 0) {
             discRow.classList.remove('d-none');
             discRow.classList.add('d-flex');
-            document.getElementById('modalLblDiscountAmt').textContent = `-₹${discountAmt.toFixed(2)}`;
+            document.getElementById('modalLblDiscountAmt').textContent = `-₹${discountAmt.toFixed(2)}` + (discType === 'FLAT' ? ` (${effectivePercent.toFixed(1)}%)` : '');
         } else {
             discRow.classList.add('d-none');
             discRow.classList.remove('d-flex');
@@ -3298,374 +3799,112 @@ function previewCurrentBill(format = 'standard') {
     const wardBed = document.getElementById('modalWardBed').textContent.trim() || 'General Ward / Bed-01';
     const doctorName = document.getElementById('modalDoctorInput').value.trim() || 'DR. VAISHALI LONDHE';
     const subtotal = parseFloat(document.getElementById('modalLblSubtotal').textContent.replace('₹', '')) || 0;
-    const discountPercent = parseFloat(document.getElementById('modalDiscountPercent').value) || 0.0;
-    const discountAmt = parseFloat(document.getElementById('modalLblDiscountAmt').textContent.replace('-₹', '').replace('₹', '')) || 0;
+    const discType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const discVal = parseFloat(document.getElementById('modalDiscountValue')?.value) || 0.0;
+    const discountPercent = discType === 'FLAT' ? (subtotal > 0 ? (discVal / subtotal) * 100 : 0) : discVal;
+    const discountAmt = discType === 'FLAT' ? Math.min(subtotal, discVal) : (subtotal * (discountPercent / 100));
     const gstAmt = parseFloat(document.getElementById('modalLblGst').textContent.replace('₹', '')) || 0;
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
     const paymentMode = document.getElementById('modalPaymentMode').value;
     const billDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
     const billDateTime = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' : ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
-    let previewDoc = '';
-
-    if (format === 'ipd_detailed') {
-        let itemsHtml = '';
-        cart.forEach((it, idx) => {
-            const qty = it.quantity;
-            const price = it.price;
-            const netAmt = (qty * price).toFixed(2);
-            itemsHtml += `
-                <div style="margin-bottom: 8px;">
-                    <div style="display: flex; align-items: flex-start;">
-                        <div style="width: 4%; text-align: left;">${idx + 1}</div>
-                        <div style="width: 56%; text-align: left; padding-right: 10px;">
-                            <strong>${it.medicine_name.toUpperCase()}</strong>
-                            <div style="padding-left: 4%; font-size: 10.5px; color: #222;">
-                                Batch: ${it.batch_number || 'STD-01'} | Packed: ${qty.toFixed(2)}, Returned: 0.00 | Charged: ${qty}
-                            </div>
-                        </div>
-                        <div style="width: 10%; text-align: right; padding-right: 12px;">${qty.toFixed(2)}</div>
-                        <div style="width: 14%; text-align: right; padding-right: 12px;">${price.toFixed(2)}</div>
-                        <div style="width: 16%; text-align: right;">${netAmt}</div>
-                    </div>
-                </div>
-            `;
-        });
-
-        previewDoc = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Inpatient Bill of Supply Preview - ${patientName}</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: "Courier New", Courier, monospace; font-size: 11.5px; line-height: 1.4; color: #000; background: #525659; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; }
-        .no-print-bar { width: 100%; max-width: 900px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: Arial, sans-serif; }
-        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; border-radius: 6px; cursor: pointer; border: none; }
-        .btn-primary { background: #0284c7; color: #fff; }
-        .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
-        .ipd-pdf-sheet { background: #fff; width: 100%; max-width: 900px; min-height: 700px; padding: 24px 30px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-        .ipd-divider { border-top: 1px dashed #000; margin: 6px 0; }
-        @media print {
-            @page { size: A4 portrait; margin: 6mm; }
-            body { background: #fff !important; padding: 0 !important; }
-            .no-print-bar { display: none !important; }
-            .ipd-pdf-sheet { box-shadow: none !important; padding: 6mm !important; }
+    let itemsHtml = '';
+    cart.forEach((it, idx) => {
+        const qty = it.quantity || 1;
+        const price = it.price || 0;
+        const netAmt = (qty * price).toFixed(2);
+        let expFormatted = '--/--';
+        if (it.expiry_date) {
+            const parts = it.expiry_date.split('-');
+            if (parts.length >= 2) {
+                expFormatted = parts[1] + '/' + (parts[0].length === 4 ? parts[0].substring(2) : parts[0]);
+            } else {
+                expFormatted = it.expiry_date;
+            }
         }
-    
-/* Inpatient Admissions Registry Table Styles */
-.badge-type-cashless {
-    background-color: #fee2e2 !important;
-    color: #dc2626 !important;
-    border: 1px solid #fca5a5 !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.badge-type-paid {
-    background-color: #ecfdf5 !important;
-    color: #059669 !important;
-    border: 1px solid #6ee7b7 !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.badge-type-paidr {
-    background-color: #f0fdf4 !important;
-    color: #16a34a !important;
-    border: 1px solid #86efac !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.ipd-number-link {
-    color: #b91c1c !important;
-    font-weight: 700 !important;
-    font-family: var(--bs-font-monospace) !important;
-    font-size: 0.84rem !important;
-    letter-spacing: -0.2px;
-}
-.ipd-table-row {
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-}
-.ipd-table-row:hover {
-    background-color: #f0f9ff !important;
-}
 
-</style>
-</head>
-<body>
-    <div class="no-print-bar">
-        <div style="font-weight:700; display:flex; align-items:center; gap:8px;"><i class="bi bi-hospital text-primary"></i> Inpatient Bill Preview (Unconfirmed Draft)</div>
-        <div style="display:flex; gap:8px;">
-            <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print Preview</button>
-            <button class="btn btn-secondary" onclick="window.close()"><i class="bi bi-x-lg"></i> Close Preview</button>
-        </div>
-    </div>
-    <div class="ipd-pdf-sheet">
-        <div style="font-weight:700; font-size:13.5px;">VATSALYA HOSPITAL KHARADI-PUNE</div>
-        <div style="font-size:11px;">22, 2A, Mundhwa - Kharadi Rd, near Galaxy Pathare Plaza, Kharadi, Pune-411014</div>
-        <div style="font-size:11px;">CIN: U85110KA2003PTC033055</div>
-        <div style="text-align:center; font-weight:700; margin:12px 0 6px 0;">Date: ${billDateTime}</div>
-        <div class="ipd-divider"></div>
-        <div style="text-align:center; font-weight:700; font-size:12.5px;">INPATIENT BILL OF SUPPLY - DETAIL</div>
-        <div style="display:flex; justify-content:space-between; font-weight:700;">
-            <div>Bill No.: DRAFT-PREVIEW</div>
-            <div>Payor: ${paymentMode === 'CREDIT' ? 'Hospital IPD Credit (Charge to Inpatient Account)' : 'Cash / Direct Settlement'}</div>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:11px;">
-            <div>TPA ID: 123</div>
-            <div>Auth. Code: claim</div>
-        </div>
-        <div class="ipd-divider"></div>
-        <div style="display:grid; grid-template-columns:55% 45%; row-gap:2px; font-size:11px; margin:6px 0;">
-            <div><strong>Name</strong> : ${patientName.toUpperCase()}</div>
-            <div><strong>Reg No.</strong> : ${patientUhid}</div>
-            <div><strong>Age/Sex</strong> : Adult / Other</div>
-            <div><strong>InPatient No</strong> : IPD-2026-PREVIEW</div>
-            <div><strong>Address</strong> : KHARADI, PUNE</div>
-            <div><strong>Admission Date</strong> : ${billDate}</div>
-            <div><strong>Ward / Bed</strong> : ${wardBed.toUpperCase()}</div>
-            <div><strong>Doctor</strong> : ${doctorName.toUpperCase()}</div>
-            <div><strong>Dept.</strong> : PHARMACY IPD</div>
-            <div><strong>GSTIN</strong> : 27AAQFV6256M1Z8</div>
-        </div>
-        <div style="display:flex; font-weight:700; padding:4px 0; border-top:1px dashed #000; border-bottom:1px dashed #000; margin:6px 0 8px 0;">
-            <div style="width:4%;">#</div>
-            <div style="width:56%;">Ref. No. Order Item</div>
-            <div style="width:10%; text-align:right; padding-right:12px;">Qty</div>
-            <div style="width:14%; text-align:right; padding-right:12px;">Price</div>
-            <div style="width:16%; text-align:right;">Amount(Rs.) Net</div>
-        </div>
-        <div style="font-weight:700; margin:8px 0 4px 0;">1 Pharmacy Drugs &nbsp;&nbsp; SAC:999311</div>
-        ${itemsHtml}
-        <div style="display:flex; justify-content:flex-end; border-top:1px dashed #777; padding-top:4px; margin-top:8px;">
-            <div style="font-weight:700; margin-right:28px;">Sub Total</div>
-            <div style="font-weight:700; width:120px; text-align:right;">${subtotal.toFixed(2)}</div>
-        </div>
-        <div style="border-top:1px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin:12px 0; display:flex; flex-direction:column; align-items:flex-end;">
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Total</strong></span><span><strong>${subtotal.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Discount</strong></span><span><strong>${discountAmt.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Net Total</strong></span><span><strong>${grandTotal.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Net Amount</strong></span><span><strong>${grandTotal.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Patient Share</strong></span><span><strong>${paymentMode === 'CREDIT' ? '0.00' : grandTotal.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; margin-bottom:2px;"><span><strong>Payments</strong></span><span><strong>${paymentMode === 'CREDIT' ? '0.00' : grandTotal.toFixed(2)}</strong></span></div>
-            <div style="display:flex; width:280px; justify-content:space-between; font-weight:800; border-top:1px dotted #000; padding-top:2px;"><span>Net Payable</span><span>${paymentMode === 'CREDIT' ? grandTotal.toFixed(2) : '0.00'}</span></div>
-        </div>
-        <div style="margin-top:24px; font-weight:700;">
-            <div>For VATSALYA HOSPITAL KHARADI-PUNE</div>
-            <div style="margin-top:14px;">Prepared by ( Administrator ) &nbsp;&nbsp;&nbsp;&nbsp; Accounts / Pharmacy Officer</div>
-        </div>
-        <div style="text-align:center; margin-top:20px; font-size:10.5px;">Page 1 of 1</div>
-    </div>
-</body>
-</html>
+        itemsHtml += `
+            <tr style="border-bottom: 1px dashed #ccc;">
+                <td style="padding: 7px 4px; text-align: left;">${idx + 1}</td>
+                <td style="padding: 7px 4px; text-align: left;">${billDate}</td>
+                <td style="padding: 7px 4px; text-align: left;"><strong>${it.medicine_name.toUpperCase()}</strong></td>
+                <td style="padding: 7px 4px; text-align: center; font-family: monospace;">${expFormatted}</td>
+                <td style="padding: 7px 4px; text-align: center;">${qty}</td>
+                <td style="padding: 7px 4px; text-align: right;">${price.toFixed(2)}</td>
+                <td style="padding: 7px 4px; text-align: right;"><strong>${netAmt}</strong></td>
+            </tr>
         `;
-    } else {
-        let rowsHtml = '';
-        cart.forEach((ci) => {
-            const qty = ci.quantity;
-            const rate = ci.price;
-            const lineSub = (qty * rate).toFixed(2);
-            const gstPct = ci.gst_percent || 12;
-            const sgstPct = (gstPct / 2).toFixed(2);
-            const cgstPct = (gstPct / 2).toFixed(2);
-            const lineGst = (lineSub * (gstPct / 100)).toFixed(2);
-            const sgstAmt = (lineGst / 2).toFixed(2);
-            const cgstAmt = (lineGst - sgstAmt).toFixed(2);
-            const exp = ci.expiry_date ? ci.expiry_date.substring(5, 7) + '/' + ci.expiry_date.substring(2, 4) : '--/--';
-            const batch = ci.batch_number || 'STD-01';
-            const pack = ci.pack_size || (ci.unit ? '1 ' + ci.unit.toUpperCase() : '1 NOS');
-            const comp = ci.manufacturer ? ci.manufacturer.substring(0, 5).toUpperCase() : 'GEN';
+    });
 
-            rowsHtml += `
-                <tr class="item-row">
-                    <td class="text-center">${qty}</td>
-                    <td class="text-center">${pack}</td>
-                    <td class="text-center">${comp}</td>
-                    <td class="text-left" style="padding-left: 4px;">${ci.medicine_name.toUpperCase()}</td>
-                    <td class="text-center">${batch}</td>
-                    <td class="text-center">${exp}</td>
-                    <td class="text-right" style="padding-right: 4px;">${rate.toFixed(2)}</td>
-                    <td class="text-right" style="padding-right: 4px;">${rate.toFixed(2)}</td>
-                    <td class="text-center">30049</td>
-                    <td class="text-right" style="font-size: 9px;">${sgstPct}</td>
-                    <td class="text-right" style="font-size: 9px;">${sgstAmt}</td>
-                    <td class="text-right" style="font-size: 9px;">${cgstPct}</td>
-                    <td class="text-right" style="font-size: 9px;">${cgstAmt}</td>
-                    <td class="text-right fw-bold" style="padding-right: 4px;">${lineSub}</td>
-                </tr>
-            `;
-        });
-
-        for (let i = cart.length; i < 10; i++) {
-            rowsHtml += `<tr class="blank-row"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
-        }
-
-        previewDoc = `
+    previewDoc = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Bill Preview - ${patientName}</title>
+    <title>Bill - ${patientName}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #525659; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; }
-        .no-print-bar { width: 100%; max-width: 900px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        body { font-family: "Segoe UI", Arial, sans-serif; font-size: 13px; line-height: 1.5; color: #111; background: #525659; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 10px; }
+        .no-print-bar { width: 100%; max-width: 800px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 10px 18px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: Arial, sans-serif; }
         .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; font-size: 12.5px; font-weight: 600; border-radius: 6px; cursor: pointer; border: none; }
-        .btn-primary { background: #0284c7; color: #fff; }
+        .btn-primary { background: #0d9488; color: #fff; }
         .btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
-        .invoice-sheet { background: #fff; width: 100%; max-width: 900px; padding: 12px 14px; border: 1px solid #000; color: #000; }
-        .invoice-title { text-align: center; font-size: 11.5px; font-weight: 700; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid #000; }
-        .header-grid { display: grid; grid-template-columns: 42% 23% 35%; border: 1px solid #000; margin-bottom: 4px; font-size: 10.5px; line-height: 1.35; }
-        .header-box { padding: 4px 6px; }
-        .header-box:not(:last-child) { border-right: 1px solid #000; }
-        .shop-name { font-size: 13px; font-weight: 800; margin-bottom: 2px; }
-        .header-line { display: flex; margin-bottom: 1px; }
-        .header-label { font-weight: 600; min-width: 80px; }
-        .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; margin-bottom: 4px; }
-        .invoice-table th { border: 1px solid #000; padding: 3px 2px; font-weight: 700; text-align: center; font-size: 9.5px; }
-        .invoice-table td { border-left: 1px solid #000; border-right: 1px solid #000; padding: 2.5px 3px; font-size: 10px; }
-        .invoice-table tr.item-row td { height: 18px; }
-        .invoice-table tr.blank-row td { height: 16px; }
-        .text-center { text-align: center; } .text-right { text-align: right; } .text-left { text-align: left; } .fw-bold { font-weight: 700; }
-        .footer-grid { display: grid; grid-template-columns: 33% 37% 30%; border: 1px solid #000; font-size: 10.5px; min-height: 85px; }
-        .footer-box { padding: 4px 6px; display: flex; flex-direction: column; justify-content: space-between; }
-        .footer-box:not(:last-child) { border-right: 1px solid #000; }
-        .summary-line { display: flex; justify-content: space-between; margin-bottom: 1.5px; }
-        .summary-label { font-weight: 600; } .summary-val { font-weight: 700; min-width: 65px; text-align: right; }
+        .bill-sheet { background: #fff; width: 100%; max-width: 800px; min-height: 480px; padding: 32px 36px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); border-radius: 4px; }
+        .bill-header-line { font-size: 17px; font-weight: 800; text-align: center; letter-spacing: 0.5px; padding-bottom: 10px; border-bottom: 2px solid #000; margin-bottom: 14px; }
+        .patient-line { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700; margin-bottom: 16px; }
+        .med-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12.5px; }
+        .med-table th { border-bottom: 2px solid #000; border-top: 1.5px solid #000; padding: 8px 4px; text-align: left; font-weight: 700; }
+        .total-block { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 2px solid #000; font-size: 15.5px; font-weight: 800; }
         @media print {
-            @page { size: A4 portrait; margin: 6mm; }
+            @page { size: A4 portrait; margin: 10mm; }
             body { background: #fff !important; padding: 0 !important; }
             .no-print-bar { display: none !important; }
-            .invoice-sheet { box-shadow: none !important; padding: 6mm !important; }
+            .bill-sheet { box-shadow: none !important; padding: 0 !important; width: 100% !important; }
         }
-    
-/* Inpatient Admissions Registry Table Styles */
-.badge-type-cashless {
-    background-color: #fee2e2 !important;
-    color: #dc2626 !important;
-    border: 1px solid #fca5a5 !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.badge-type-paid {
-    background-color: #ecfdf5 !important;
-    color: #059669 !important;
-    border: 1px solid #6ee7b7 !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.badge-type-paidr {
-    background-color: #f0fdf4 !important;
-    color: #16a34a !important;
-    border: 1px solid #86efac !important;
-    font-weight: 700 !important;
-    font-size: 0.72rem !important;
-    padding: 3px 8px !important;
-    border-radius: 6px !important;
-}
-.ipd-number-link {
-    color: #b91c1c !important;
-    font-weight: 700 !important;
-    font-family: var(--bs-font-monospace) !important;
-    font-size: 0.84rem !important;
-    letter-spacing: -0.2px;
-}
-.ipd-table-row {
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-}
-.ipd-table-row:hover {
-    background-color: #f0f9ff !important;
-}
-
-</style>
+    </style>
 </head>
 <body>
     <div class="no-print-bar">
-        <div style="font-weight:700; display:flex; align-items:center; gap:8px;"><i class="bi bi-receipt text-primary"></i> Bill Preview (Unconfirmed Draft)</div>
+        <div style="font-weight:700; display:flex; align-items:center; gap:8px;"><i class="bi bi-receipt text-success"></i> Inpatient Bill Preview</div>
         <div style="display:flex; gap:8px;">
-            <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print Preview</button>
-            <button class="btn btn-secondary" onclick="window.close()"><i class="bi bi-x-lg"></i> Close Preview</button>
+            <button class="btn btn-primary" onclick="window.print()"><i class="bi bi-printer"></i> Print Bill</button>
+            <button class="btn btn-secondary" onclick="window.close()"><i class="bi bi-x-lg"></i> Close</button>
         </div>
     </div>
-    <div class="invoice-sheet">
-        <div class="invoice-title">GST TAX INVOICE</div>
-        <div class="header-grid">
-            <div class="header-box">
-                <div class="shop-name">VATSALYA MEDICAL</div>
-                <div>1ST FLR, VATSALYA HOSPITAL, GALAXY PATHARE PLAZA,</div>
-                <div>SAINATH NAGAR, KHARADI, PUNE-411014 Galaxy Pathare</div>
-                <div><strong>DL No.</strong> : 20-276335,21-276336-MH-PZ1</div>
-                <div><strong>GST No.</strong> : 27AAQFV6256M1Z8</div>
-            </div>
-            <div class="header-box">
-                <div class="header-line"><span class="header-label">Bill No.</span><span>: <strong>'CR' DRAFT-PREVIEW</strong></span></div>
-                <div class="header-line"><span class="header-label">Date</span><span>: ${billDate}</span></div>
-                <div class="header-line"><span class="header-label">Ward/Bed</span><span>: ${wardBed.toUpperCase()}</span></div>
-                <div class="header-line"><span class="header-label">UHID</span><span>: ${patientUhid}</span></div>
-            </div>
-            <div class="header-box">
-                <div class="header-line"><span class="header-label">Patient Name</span><span>: ${patientName.toUpperCase()}</span></div>
-                <div class="header-line"><span class="header-label">Patient Add</span><span>: KHARADI, PUNE</span></div>
-                <div class="header-line"><span class="header-label">Doctor Name</span><span>: ${doctorName.toUpperCase()}</span></div>
-                <div class="header-line"><span class="header-label">Doctor Address</span><span>: VATSALYA HOSPITAL</span></div>
-            </div>
+    <div class="bill-sheet">
+        <div class="bill-header-line">Vatsalya &nbsp;&nbsp;&nbsp;&nbsp; GSTIN: 27AAQFV6256M1Z8</div>
+        <div class="patient-line">
+            <div><strong>Patient Name:</strong> ${patientName.toUpperCase()}</div>
+            <div><strong>Date:</strong> ${billDate}</div>
         </div>
-        <table class="invoice-table">
-            <colgroup>
-                <col style="width: 4%;"><col style="width: 7%;"><col style="width: 6%;"><col style="width: 29%;">
-                <col style="width: 10%;"><col style="width: 6%;"><col style="width: 7%;"><col style="width: 7%;">
-                <col style="width: 6%;"><col style="width: 4%;"><col style="width: 5%;"><col style="width: 4%;">
-                <col style="width: 5%;"><col style="width: 9%;">
-            </colgroup>
+        <table class="med-table">
             <thead>
                 <tr>
-                    <th rowspan="2">Qty</th><th rowspan="2">Pack</th><th rowspan="2">Comp</th><th rowspan="2" class="text-left" style="padding-left:4px;">Description</th>
-                    <th rowspan="2">Batch</th><th rowspan="2">Exp</th><th rowspan="2">MRP</th><th rowspan="2">Rate</th><th rowspan="2">HSN</th>
-                    <th colspan="2" style="border-bottom:1px solid #000;">SGST</th><th colspan="2" style="border-bottom:1px solid #000;">CGST</th><th rowspan="2">Amount</th>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 14%;">Date</th>
+                    <th style="width: 43%;">Medicine Name</th>
+                    <th style="width: 14%; text-align: center;">Expiry Date</th>
+                    <th style="width: 7%; text-align: center;">Qty</th>
+                    <th style="width: 8%; text-align: right;">Price</th>
+                    <th style="width: 9%; text-align: right;">Amount</th>
                 </tr>
-                <tr><th style="font-size:8.5px; padding:1px;">%</th><th style="font-size:8.5px; padding:1px;">Amt</th><th style="font-size:8.5px; padding:1px;">%</th><th style="font-size:8.5px; padding:1px;">Amt</th></tr>
             </thead>
-            <tbody>${rowsHtml}</tbody>
+            <tbody>
+                ${itemsHtml}
+            </tbody>
         </table>
-        <div class="footer-grid">
-            <div class="footer-box">
-                <div>5% / 12% GST : ${gstAmt.toFixed(2)}</div>
-                <div style="font-size:9px; border-top:1px dashed #777; margin-top:auto; padding-top:2px;">E &amp; O E Subject to Pune Jurisdiction</div>
-            </div>
-            <div class="footer-box" style="text-align:center; align-items:center;">
-                <div style="font-weight:700;">GET WELL SOON..............</div>
-                <div style="font-size:10px; font-weight:600;">For VATSALYA MEDICAL</div>
-                <div style="height:28px;"></div>
-                <div style="font-size:9.5px; font-weight:700;">PHARMACIST SIGN</div>
-            </div>
-            <div class="footer-box">
-                <div class="summary-line"><span class="summary-label">GST Amt</span><span class="summary-val">: ${gstAmt.toFixed(2)}</span></div>
-                <div class="summary-line"><span class="summary-label">Gross Amt</span><span class="summary-val">: ${subtotal.toFixed(2)}</span></div>
-                <div class="summary-line"><span class="summary-label">Disc</span><span class="summary-val">: ${discountAmt.toFixed(2)}</span></div>
-                <div class="summary-line" style="font-size:11px;"><span class="summary-label"><strong>Amount</strong></span><span class="summary-val">: <strong>${grandTotal.toFixed(2)}</strong></span></div>
-                <div style="font-size:9px; text-align:right; border-top:1px dotted #888; margin-top:auto; padding-top:2px;">Page No. : 1</div>
+        <div class="total-block">
+            <div style="display: flex; width: 240px; justify-content: space-between;">
+                <span>Total:</span>
+                <span>₹${grandTotal.toFixed(2)}</span>
             </div>
         </div>
     </div>
 </body>
 </html>
-        `;
-    }
-
+    `;
     const win = window.open('', '_blank');
     if (win) {
         win.document.open();
@@ -3675,14 +3914,32 @@ function previewCurrentBill(format = 'standard') {
 }
 
 function submitFinalSale() {
+    if (!cart || cart.length === 0) {
+        alert('Your cart is empty. Please select at least one medication item.');
+        return;
+    }
+
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
-    const discountPercent = parseFloat(document.getElementById('modalDiscountPercent').value) || 0.0;
+    const discountType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const discountVal = parseFloat(document.getElementById('modalDiscountValue')?.value) || 0.0;
+    const subtotal = parseFloat(document.getElementById('modalLblSubtotal').textContent.replace('₹', '')) || 0.0;
+    let discountPercent = 0.0;
+
+    if (discountType === 'FLAT') {
+        discountPercent = subtotal > 0 ? Math.min(50.0, (discountVal / subtotal) * 100.0) : 0.0;
+    } else {
+        discountPercent = Math.min(50.0, discountVal);
+    }
+
     const paymentMode = document.getElementById('modalPaymentMode').value;
     const notes = document.getElementById('modalNotesInput').value.trim();
 
+    // Populate cart items JSON
+    document.getElementById('cartItemsJson').value = JSON.stringify(cart);
     document.getElementById('hiddenPaidAmount').value = paymentMode === 'CREDIT' ? 0.0 : grandTotal;
-    document.getElementById('hiddenDiscountPercent').value = discountPercent;
-    document.getElementById('hiddenDiscountValue').value = discountPercent;
+    document.getElementById('hiddenDiscountType').value = discountType;
+    document.getElementById('hiddenDiscountValue').value = discountVal;
+    document.getElementById('hiddenDiscountPercent').value = discountPercent.toFixed(4);
     document.getElementById('hiddenPaymentMode').value = paymentMode;
     document.getElementById('hiddenNotes').value = notes;
 
@@ -3695,8 +3952,6 @@ function submitFinalSale() {
 
 document.addEventListener('DOMContentLoaded', function() {
     renderAdmittedPatientsTable(ipdPatientsList);
-
-    onMedicineSearchInput('');
 
     // Close suggestions lists on click outside
     document.addEventListener('click', function(e) {
@@ -3741,6 +3996,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    // Start with focus directly on Patient search input for seamless keyboard workflow
+    setTimeout(function() {
+        const pInput = document.getElementById('ipdPatientSearchInput');
+        if (pInput) {
+            pInput.focus();
+            pInput.select();
+        }
+    }, 150);
 });
 </script>
 

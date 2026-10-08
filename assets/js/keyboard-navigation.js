@@ -204,8 +204,8 @@
                     return;
                 }
 
-                // If in POS charge row, POS workflow handles Qty & Search
-                if (target.id === 'chargeMedicineInput' || target.id === 'chargeQtyInput' || target.id === 'modalPaidInput') {
+                // If in POS charge row or cart quantity input, POS workflow handles Qty & Search
+                if (target.id === 'chargeMedicineInput' || target.id === 'chargeQtyInput' || target.id === 'modalPaidInput' || target.classList.contains('cart-qty-input') || (target.id && target.id.startsWith('cart_qty_'))) {
                     return;
                 }
 
@@ -689,10 +689,11 @@
     // ──────────────────────────────────────────────────────────────────────────
     const PosWorkflowHelper = {
         init() {
-            const searchInput = document.getElementById('chargeMedicineInput');
+            const patientInput = document.getElementById('counterPatientSearchInput') || document.getElementById('ipdPatientSearchInput');
+            const searchInput = patientInput || document.getElementById('chargeMedicineInput');
             if (!searchInput) return; // Not on POS page
 
-            // Ensure search input is cleanly focused on page load
+            // Ensure patient search input (or medicine search) is cleanly focused on page load
             window.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     FocusManager.highlight(searchInput, true);
@@ -896,9 +897,9 @@
 
             // If no active element or body is focused, focus the primary or first candidate
             if (!activeEl || activeEl === document.body || !mainScope.contains(activeEl)) {
-                const primary = document.getElementById('chargeMedicineInput') ||
-                                document.getElementById('counterPatientSearchInput') ||
+                const primary = document.getElementById('counterPatientSearchInput') ||
                                 document.getElementById('ipdPatientSearchInput') ||
+                                document.getElementById('chargeMedicineInput') ||
                                 candidates[0];
                 this.focus(primary);
                 return true;
@@ -1036,9 +1037,9 @@
             }
 
             // Otherwise, focus the primary search input or first main candidate
-            const primary = document.getElementById('chargeMedicineInput') ||
-                            document.getElementById('counterPatientSearchInput') ||
-                            document.getElementById('ipdPatientSearchInput');
+            const primary = document.getElementById('counterPatientSearchInput') ||
+                            document.getElementById('ipdPatientSearchInput') ||
+                            document.getElementById('chargeMedicineInput');
             if (primary) {
                 this.focus(primary);
                 return true;
@@ -1172,7 +1173,11 @@
                 scope: 'all',
                 description: 'Focus Patient Selector',
                 handler: () => {
-                    const patientSelect = document.getElementById('patientSelect') || document.getElementById('ipdPatientSelect') || document.getElementById('patientSearchInput');
+                    const patientSelect = document.getElementById('counterPatientSearchInput') || 
+                                          document.getElementById('ipdPatientSearchInput') || 
+                                          document.getElementById('patientSelect') || 
+                                          document.getElementById('ipdPatientSelect') || 
+                                          document.getElementById('patientSearchInput');
                     if (patientSelect) {
                         FocusManager.highlight(patientSelect, true);
                     }

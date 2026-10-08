@@ -145,6 +145,22 @@ include __DIR__ . '/../../includes/navbar.php';
     <!-- Metadata Details -->
     <div class="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4">
         <h6 class="fw-bold text-dark border-bottom pb-2 mb-3"><i class="ti ti-info-circle me-2 text-emerald"></i>Master Specifications</h6>
+        
+        <!-- Active Composition / What Medicine Contains Callout -->
+        <div class="p-3 rounded-3 mb-3" style="background-color: #ecfdf5; border: 1px solid #a7f3d0;">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+                <span class="small fw-bold text-uppercase" style="color: #047857; font-size: 0.76rem; letter-spacing: 0.5px;">
+                    <i class="ti ti-flask me-1"></i>Active Formulation &amp; Chemical Composition (Contains Remark)
+                </span>
+                <span class="badge bg-white text-emerald border fw-semibold" style="color: #059669; font-size: 0.70rem;">Active Ingredients</span>
+            </div>
+            <div class="fw-bold text-dark fs-5 mb-1"><?= htmlspecialchars($medicine['composition'] ?: ($medicine['generic_name'] ?: 'Not specified')) ?></div>
+            <div class="text-muted small">
+                Generic Name: <span class="fw-semibold text-secondary"><?= htmlspecialchars($medicine['generic_name'] ?? '-') ?></span> &bull; 
+                Strength / Potency: <span class="fw-semibold text-secondary"><?= htmlspecialchars($medicine['strength'] ?? '-') ?></span>
+            </div>
+        </div>
+
         <div class="row g-3">
             <div class="col-6 col-md-3">
                 <div class="text-muted small">Dosage Form</div>

@@ -29,29 +29,34 @@ Built with a clinical-first UI, real-time FEFO (First-Expiry, First-Out) invento
 ## 🌟 Key Features
 
 ### 1. 🏥 Outpatient & Counter Sales (OPD)
+
 - **High-Speed Counter Billing (POS):** Rapid dispensing with barcode scanning, hotkey keyboard navigation, and instant batch selection.
 - **Prescription Integration:** Seamless retrieval of clinical prescriptions with automated dosage-to-batch mapping.
 - **Payment Flexibility:** Multi-mode tender support (Cash, Card, UPI, Credit) with split-payment capabilities.
 - **Sales Returns & Credit Notes:** Controlled refund workflows linked directly to original invoices and stock restitution.
 
 ### 2. 🛏️ Inpatient Pharmacy & Ward Dispensing (IPD)
+
 - **Ward Indent Processing:** Real-time fulfillment queue for ward drug requests, patient bed tracking, and nurse administration.
 - **Medication Administration Records (MAR):** Complete scheduling, administration timestamps, and nursing sign-offs.
 - **Discharge Clearance:** Immediate billing reconciliation and discharge audit checks to avoid unbilled dispensations.
 
 ### 3. 📦 Inventory & FEFO Batch Management
+
 - **FEFO Dispensing Priority:** Automated batch suggestion prioritizing nearest-expiry inventory.
 - **Live Stock Ledger:** Perpetual inventory tracking with double-entry stock transactions for every inbound and outbound unit.
 - **Expiry Forecasting & Quarantine:** Multi-tier threshold alerts (30/60/90 days), automated stock quarantine, and authorized disposal registers.
 - **Stock Adjustments & Audits:** Controlled physical stock reconciliation with reason logging and manager approvals.
 
 ### 4. 🚚 Procurement & Supply Chain
+
 - **Supplier Relationship Management:** Complete vendor profiles, GSTIN details, credit terms, and payment ledgers.
 - **Purchase Orders (PO):** Multi-item order creation with rate history and status workflows (*Draft &rarr; Approved &rarr; Received*).
 - **Goods Received Note (GRN):** Strict 2-way and 3-way matching of physical deliveries against POs and vendor invoices.
 - **Accounts Payable:** Supplier invoice registration, partial payment tracking, and outstanding balance summaries.
 
 ### 5. 📊 Clinical & Executive Analytics
+
 - **Live Operations Dashboard:** Real-time KPI cards for Daily Sales, Pending Receivables, Stock Alerts, and Expiring Batches.
 - **Traceability Reports:** Complete batch recall logs, audit trails, and inventory movement histories.
 - **Financial & Tax Reporting:** Detailed GST breakdowns, sales summaries, and profit margin analysis.
@@ -78,8 +83,7 @@ Pharmacy/
 │   ├── header.php         # Global head, meta tags, and CSP policy
 │   ├── navbar.php         # Top navigation header & user profile menu
 │   ├── sidebar.php        # Role-aware collapsible clinical navigation
-│   ├── permissions.php    # RBAC permission middleware & guards
-│   ├── pharmacy_stock_helper.php # Core transactional stock ledger engine
+│   ├── functions.php      # Helper utilities & string/currency formatters
 │   └── footer.php         # Global scripts & toast notification container
 ├── modules/
 │   ├── admin/             # Users, RBAC Roles, System Settings, Audit Logs
@@ -113,17 +117,21 @@ Pharmacy/
 ## 🚀 Installation & Setup
 
 ### Prerequisites
+
 - [XAMPP](https://www.apachefriends.org/) / [WampServer](https://www.wampserver.com/) / [LAMP](https://en.wikipedia.org/wiki/LAMP_(software_bundle)) stack running **PHP 8.0+** and **MySQL 5.7+**
 - Apache with `mod_rewrite` enabled
 
 ### 1. Clone the Repository
+
 ```bash
 cd c:/xampp/htdocs/
 git clone https://github.com/halikar-70/MediCORE-Pharmacy.git Pharmacy
 ```
 
 ### 2. Configure Database Connection
+
 Open `config/database.php` and set your local MySQL credentials if different from default:
+
 ```php
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'pharmacy_db');
@@ -133,6 +141,7 @@ define('DB_PORT', 3306);
 ```
 
 ### 3. Import the Database
+
 You can import the database via phpMyAdmin or MySQL CLI:
 
 ```bash
@@ -146,7 +155,9 @@ mysql -u root -p pharmacy_db < c:/xampp/htdocs/Pharmacy/pharmacy_db.sql
 *(Alternatively, run the automated data synchronization script in your terminal: `php database/import_hospital_full_data.php`)*
 
 ### 4. Launch Application
+
 Start Apache & MySQL in XAMPP Control Panel, then navigate to:
+
 ```
 http://localhost/Pharmacy/
 ```

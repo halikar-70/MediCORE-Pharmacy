@@ -177,7 +177,7 @@ include __DIR__ . '/../../includes/navbar.php';
                 <thead class="bg-light text-muted small text-uppercase">
                     <tr>
                         <th class="ps-4">Medicine Details</th>
-                        <th>Generic / Strength</th>
+                        <th>Generic / Composition</th>
                         <th>Category / Pack</th>
                         <th>Schedule</th>
                         <th>Shelf / Rack</th>
@@ -212,8 +212,15 @@ include __DIR__ . '/../../includes/navbar.php';
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="small fw-semibold text-secondary"><?= htmlspecialchars($m['generic_name'] ?? '-') ?></div>
-                                    <div class="text-muted small"><?= htmlspecialchars($m['strength'] ?? '-') ?></div>
+                                    <div class="small fw-bold text-dark"><?= htmlspecialchars($m['generic_name'] ?? '-') ?></div>
+                                    <?php if (!empty($m['composition'])): ?>
+                                        <div class="small text-emerald fw-medium mt-0.5" style="font-size: 0.76rem; color: #047857;" title="Medicine Composition / What it contains">
+                                            <i class="ti ti-flask me-1"></i><?= htmlspecialchars($m['composition']) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($m['strength'])): ?>
+                                        <div class="text-muted small" style="font-size: 0.72rem;"><?= htmlspecialchars($m['strength']) ?></div>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <span class="badge bg-light text-secondary border"><?= htmlspecialchars($m['category'] ?? 'Tablet') ?></span>

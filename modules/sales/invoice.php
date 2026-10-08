@@ -336,6 +336,7 @@ foreach ($sale['items'] as $item) {
                 'name'        => strtoupper($medName),
                 'details'     => ($item['generic_name'] ? "({$item['generic_name']})" : "") . ($item['manufacturer'] ? ", " . strtoupper($item['manufacturer']) : ""),
                 'batch'       => $batchNo,
+                'exp'         => $expDate,
                 'qty'         => number_format($qty, 2),
                 'price'       => number_format($rate, 2),
                 'net_amount'  => number_format($lineSubtotal, 2)
@@ -385,6 +386,7 @@ foreach ($sale['items'] as $item) {
             'name'        => strtoupper($medName),
             'details'     => ($item['generic_name'] ? "({$item['generic_name']})" : ""),
             'batch'       => $batchNo,
+            'exp'         => $expDate,
             'qty'         => number_format($qty, 2),
             'price'       => number_format($rate, 2),
             'net_amount'  => number_format($lineSubtotal, 2)
@@ -1118,187 +1120,70 @@ if ($grandTotal <= 0.0) {
 
     <?php if ($format === 'ipd_detailed'): ?>
         <!-- ================================================================= -->
-        <!-- FORMAT 2: INPATIENT BILL OF SUPPLY - DETAIL (PDF FORMAT)          -->
+        <!-- FORMAT 2: INPATIENT BILL (MINIMAL CLEAN LAYOUT)                   -->
         <!-- ================================================================= -->
-        <div class="ipd-pdf-sheet" id="invoiceContainer">
-            <div class="ipd-hospital-title"><?= htmlspecialchars($hospitalName) ?></div>
-            <div class="ipd-address-line"><?= htmlspecialchars($hospitalAddress) ?></div>
-            <div class="ipd-address-line">CIN: <?= htmlspecialchars($hospitalCin) ?></div>
-
-            <div class="ipd-date-line">Date: <span class="editable-field" id="ipdDateVal" data-field="sale_date"><?= htmlspecialchars($billDateTime) ?></span></div>
-            <div class="ipd-divider"></div>
-
-            <div class="ipd-banner-title">INPATIENT BILL OF SUPPLY - DETAIL</div>
-            <div class="ipd-bill-meta-row">
-                <div>Bill No.: <span class="font-mono"><?= htmlspecialchars($billNo) ?></span></div>
-                <div>Payor: <?= htmlspecialchars($payorName) ?></div>
-            </div>
-            <div class="ipd-bill-meta-row" style="font-weight: normal; font-size: 11px;">
-                <div>TPA ID: 123</div>
-                <div>Auth. Code: claim</div>
+        <div class="ipd-pdf-sheet" id="invoiceContainer" style="max-width: 800px; margin: 0 auto; padding: 28px 32px;">
+            <div style="font-size: 18px; font-weight: 800; text-align: center; letter-spacing: 0.5px; padding-bottom: 10px; border-bottom: 2px solid #000; margin-bottom: 14px;">
+                Vatsalya &nbsp;&nbsp;&nbsp;&nbsp; GSTIN: <?= htmlspecialchars($hospitalGstin) ?>
             </div>
 
-            <div class="ipd-divider"></div>
-
-            <div class="ipd-meta-grid">
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Name</span>
-                    <span class="ipd-meta-val">: <strong class="editable-field" id="ipdPatientName" data-field="patient_name"><?= strtoupper(htmlspecialchars($patientName)) ?></strong></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Reg No.</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdRegNo" data-field="hospital_uhid"><?= htmlspecialchars($regNo) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Age/Sex</span>
-                    <span class="ipd-meta-val">: Adult / Other</span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">InPatient No</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdInpatientNo" data-field="ipd_number"><?= htmlspecialchars($ipdNo) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Address</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdPatientAddress" data-field="patient_address"><?= strtoupper(htmlspecialchars($patientAddress)) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Admission Date</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdAdmissionDate" data-field="sale_date"><?= htmlspecialchars($billDate) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Ward</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdWardName" data-field="ipd_ward"><?= strtoupper(htmlspecialchars($wardName)) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Admission Time</span>
-                    <span class="ipd-meta-val">: <?= date('h:iA', strtotime($sale['created_at'])) ?></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Bed</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdBedNo" data-field="ipd_bed"><?= strtoupper(htmlspecialchars($bedNo)) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Discharge Date</span>
-                    <span class="ipd-meta-val">: Admitted (Ongoing)</span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Dept.</span>
-                    <span class="ipd-meta-val">: PHARMACY IPD</span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">No. of Days</span>
-                    <span class="ipd-meta-val">: 1</span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Doctor</span>
-                    <span class="ipd-meta-val">: <span class="editable-field" id="ipdDoctorName" data-field="doctor_name"><?= strtoupper(htmlspecialchars($doctorName)) ?></span></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">PAN No</span>
-                    <span class="ipd-meta-val">: <?= htmlspecialchars($hospitalPan) ?></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">GSTIN</span>
-                    <span class="ipd-meta-val">: <?= htmlspecialchars($hospitalGstin) ?></span>
-                </div>
-                <div class="ipd-meta-item">
-                    <span class="ipd-meta-lbl">Payment Status</span>
-                    <span class="ipd-meta-val">: <?= htmlspecialchars($sale['payment_status']) ?></span>
-                </div>
+            <div style="display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700; margin-bottom: 16px;">
+                <div><strong>Patient Name:</strong> <span class="editable-field" id="ipdPatientName" data-field="patient_name"><?= strtoupper(htmlspecialchars($patientName)) ?></span></div>
+                <div><strong>Date:</strong> <span class="editable-field" id="ipdDateVal" data-field="sale_date"><?= htmlspecialchars($billDate) ?></span></div>
             </div>
 
-            <div class="ipd-table-header">
-                <div class="ipd-col-idx">#</div>
-                <div class="ipd-col-item">Ref. No. Order Item</div>
-                <div class="ipd-col-qty">Qty</div>
-                <div class="ipd-col-price">Price</div>
-                <div class="ipd-col-net">Amount(Rs.) Net</div>
-            </div>
-
-            <div class="ipd-section-heading">
-                1 Pharmacy Drugs &nbsp;&nbsp; SAC:999311
-            </div>
-
-            <div id="ipdItemsContainer">
-                <?php foreach ($ipdItems as $idx => $it): ?>
-                    <div class="ipd-item-row ipd-item-data-row" data-index="<?= $idx ?>">
-                        <div class="ipd-item-line">
-                            <div class="ipd-col-idx"><?= ($idx + 1) ?></div>
-                            <div class="ipd-col-item">
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12.5px;">
+                <thead>
+                    <tr style="border-top: 1.5px solid #000; border-bottom: 2px solid #000;">
+                        <th style="padding: 8px 4px; text-align: left; width: 5%;">#</th>
+                        <th style="padding: 8px 4px; text-align: left; width: 14%;">Date</th>
+                        <th style="padding: 8px 4px; text-align: left; width: 43%;">Medicine Name</th>
+                        <th style="padding: 8px 4px; text-align: center; width: 14%;">Expiry Date</th>
+                        <th style="padding: 8px 4px; text-align: center; width: 7%;">Qty</th>
+                        <th style="padding: 8px 4px; text-align: right; width: 8%;">Price</th>
+                        <th style="padding: 8px 4px; text-align: right; width: 9%;">Amount</th>
+                        <th class="edit-ui-control" style="width: 4%;"></th>
+                    </tr>
+                </thead>
+                <tbody id="ipdItemsContainer">
+                    <?php foreach ($ipdItems as $idx => $it): ?>
+                        <tr class="ipd-item-data-row" data-index="<?= $idx ?>" style="border-bottom: 1px dashed #ccc;">
+                            <td style="padding: 7px 4px;"><?= ($idx + 1) ?></td>
+                            <td style="padding: 7px 4px;"><?= htmlspecialchars($billDate) ?></td>
+                            <td style="padding: 7px 4px;">
                                 <strong class="editable-field ipd-item-name" data-field="description"><?= htmlspecialchars($it['name']) ?></strong>
-                                <?php if (!empty($it['details'])): ?>
-                                    <div style="font-size: 10.5px;"><?= htmlspecialchars($it['details']) ?></div>
-                                <?php endif; ?>
-                                <div class="ipd-sub-info">
-                                    Batch: <span class="editable-field ipd-item-batch" data-field="batch"><?= htmlspecialchars($it['batch']) ?></span> | Packed: <span class="editable-field ipd-item-qty-packed"><?= $it['qty'] ?></span>, Returned: 0.00 | Charged: <span class="editable-field ipd-item-qty" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= (int)$it['qty'] ?></span>
-                                </div>
-                            </div>
-                            <div class="ipd-col-qty">
-                                <span class="editable-field ipd-item-qty-col" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= $it['qty'] ?></span>
-                            </div>
-                            <div class="ipd-col-price">
+                            </td>
+                            <td style="padding: 7px 4px; text-align: center; font-family: monospace;">
+                                <span class="editable-field ipd-item-exp" data-field="exp"><?= htmlspecialchars($it['exp'] ?? '--/--') ?></span>
+                            </td>
+                            <td style="padding: 7px 4px; text-align: center;">
+                                <span class="editable-field ipd-item-qty" data-field="qty" oninput="onIpdItemChange(<?= $idx ?>)"><?= (int)$it['qty'] ?></span>
+                            </td>
+                            <td style="padding: 7px 4px; text-align: right;">
                                 <span class="editable-field ipd-item-price" data-field="rate" oninput="onIpdItemChange(<?= $idx ?>)"><?= $it['price'] ?></span>
-                            </div>
-                            <div class="ipd-col-net ipd-item-net">
-                                <?= $it['net_amount'] ?>
-                            </div>
-                            <div class="edit-ui-control ms-2">
+                            </td>
+                            <td style="padding: 7px 4px; text-align: right;">
+                                <strong class="ipd-item-net"><?= $it['net_amount'] ?></strong>
+                            </td>
+                            <td class="edit-ui-control text-center">
                                 <button type="button" class="btn-del-row" onclick="deleteIpdRow(<?= $idx ?>)" title="Remove Item"><i class="bi bi-trash"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
 
             <div class="edit-ui-control my-2">
                 <button type="button" class="btn-add-item-row" onclick="addNewIpdRow()">
-                    <i class="bi bi-plus-circle"></i> Add Inpatient Drug Row
+                    <i class="bi bi-plus-circle"></i> Add Medication Row
                 </button>
             </div>
 
-            <div class="ipd-subtotal-row">
-                <div class="ipd-subtotal-label">Sub Total</div>
-                <div class="ipd-subtotal-val" id="ipdSubtotalVal"><?= number_format($totalGross, 2) ?></div>
-            </div>
-
-            <div class="ipd-summary-block">
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Total</span>
-                    <span class="ipd-summary-val" id="ipdSummaryTotal"><?= number_format($totalGross, 2) ?></span>
+            <div style="display: flex; justify-content: flex-end; padding-top: 12px; border-top: 2px solid #000; font-size: 15.5px; font-weight: 800;">
+                <div style="display: flex; width: 240px; justify-content: space-between;">
+                    <span>Total:</span>
+                    <span id="ipdNetTotal">₹<?= number_format($grandTotal, 2) ?></span>
                 </div>
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Discount</span>
-                    <span class="ipd-summary-val editable-field" id="ipdDiscountVal" data-field="discount_amount" oninput="recalculateIpdTotals()"><?= number_format($totalDisc, 2) ?></span>
-                </div>
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Net Total</span>
-                    <span class="ipd-summary-val" id="ipdNetTotal"><?= number_format($grandTotal, 2) ?></span>
-                </div>
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Net Amount</span>
-                    <span class="ipd-summary-val" id="ipdNetAmount"><?= number_format($grandTotal, 2) ?></span>
-                </div>
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Patient Share</span>
-                    <span class="ipd-summary-val" id="ipdPatientShare"><?= number_format($paidAmount, 2) ?></span>
-                </div>
-                <div class="ipd-summary-row">
-                    <span class="ipd-summary-lbl">Payments</span>
-                    <span class="ipd-summary-val"><?= number_format($paidAmount, 2) ?></span>
-                </div>
-                <div class="ipd-summary-row" style="font-weight: 800; border-top: 1px dotted #000; padding-top: 2px; margin-top: 2px;">
-                    <span class="ipd-summary-lbl">Net Payable</span>
-                    <span class="ipd-summary-val" id="ipdNetPayable"><?= number_format($balanceDue, 2) ?></span>
-                </div>
-            </div>
-
-            <div class="ipd-footer-sign">
-                <div>For <?= htmlspecialchars($hospitalName) ?></div>
-                <div style="margin-top: 14px;">Prepared by ( <?= htmlspecialchars($cashierName) ?> ) &nbsp;&nbsp;&nbsp;&nbsp; Accounts / Pharmacy Officer</div>
-            </div>
-
-            <div class="ipd-page-foot">
-                Page 1 of 1
             </div>
         </div>
 

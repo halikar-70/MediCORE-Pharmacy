@@ -166,11 +166,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $hasOverride = has_permission('pharmacy.discount.override');
 
+            $patientId = !empty($_POST['patient_id']) ? (int)$_POST['patient_id'] : null;
+
             $saleData = [
                 'sale_type'        => 'COUNTER_SALE',
                 'customer_name'    => $customerName !== '' ? $customerName : 'Walk-in Customer',
                 'customer_mobile'  => $customerMobile !== '' ? $customerMobile : null,
                 'doctor_name'      => $doctorName !== '' ? $doctorName : null,
+                'patient_id'        => $patientId,
                 'discount_percent' => $discountPercent,
                 'idempotency_key'  => $idempotencyKey !== '' ? $idempotencyKey : null,
                 'notes'            => $notes !== '' ? $notes : null
@@ -206,6 +209,22 @@ if (isset($_GET['print_id'])) {
 
 $page_title = 'Create OPD Bill';
 
+// Fetch Recent 10 Counter Sales for quick table display
+$recentOpdBills = [];
+try {
+    $stmt = $pdo->query("
+        SELECT s.sale_id, s.sale_number, s.sale_date, s.customer_name, s.customer_mobile, s.doctor_name,
+               s.subtotal, s.discount_amount, s.discount_percent, s.grand_total, s.paid_amount, s.payment_status,
+               s.created_at,
+               (SELECT COUNT(*) FROM pharmacy_sale_items WHERE sale_id = s.sale_id) as items_count
+        FROM pharmacy_sales s
+        WHERE s.sale_type = 'COUNTER_SALE'
+        ORDER BY s.sale_id DESC
+        LIMIT 10
+    ");
+    $recentOpdBills = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {}
+
 // Fetch Active Patients for Bill Information (Hospital Patients + Local Pharmacy Patients)
 $patients = [];
 try {
@@ -213,14 +232,20 @@ try {
     if ($hospitalPdo) {
         $hPatients = $hospitalPdo->query("
             SELECT 
-                patient_id as id,
-                COALESCE(patient_code, CONCAT('VH', patient_id)) as hospital_uhid,
-                COALESCE(patient_code, CONCAT('VH', patient_id)) as pharmacy_patient_no,
-                CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) as name,
-                COALESCE(phone, '') as mobile
-            FROM patients
-            WHERE (status IS NULL OR status = 'Active' OR status = 1)
-            ORDER BY patient_id DESC
+                p.patient_id as id,
+                COALESCE(p.patient_code, CONCAT('VH', p.patient_id)) as hospital_uhid,
+                COALESCE(p.patient_code, CONCAT('VH', p.patient_id)) as pharmacy_patient_no,
+                CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) as name,
+                COALESCE(p.phone, '') as mobile,
+                COALESCE(
+                    (SELECT d.name FROM opd_visits v JOIN doctors d ON d.doctor_id = v.doctor_id WHERE v.patient_id = p.patient_id ORDER BY v.visit_id DESC LIMIT 1),
+                    (SELECT d.name FROM prescriptions pr JOIN doctors d ON d.doctor_id = pr.doctor_id WHERE pr.patient_id = p.patient_id ORDER BY pr.prescription_id DESC LIMIT 1),
+                    (SELECT d.name FROM appointments a JOIN doctors d ON d.doctor_id = a.doctor_id WHERE a.patient_id = p.patient_id ORDER BY a.appointment_id DESC LIMIT 1),
+                    (SELECT d.name FROM admissions adm JOIN doctors d ON d.doctor_id = adm.doctor_id WHERE adm.patient_id = p.patient_id ORDER BY adm.admission_id DESC LIMIT 1)
+                ) as doctor_name
+            FROM patients p
+            WHERE (p.status IS NULL OR p.status = 'Active' OR p.status = 1)
+            ORDER BY p.patient_id DESC
         ")->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($hPatients as $hp) {
@@ -235,10 +260,19 @@ try {
 // Also merge any local pharmacy patients
 try {
     $localPatients = $pdo->query("
-        SELECT id, pharmacy_patient_no, hospital_uhid, name, mobile
-        FROM pharmacy_patients
-        WHERE status = 'Active'
-        ORDER BY name ASC
+        SELECT 
+            pp.id, 
+            pp.pharmacy_patient_no, 
+            pp.hospital_uhid, 
+            pp.name, 
+            pp.mobile,
+            COALESCE(
+                (SELECT s.doctor_name FROM pharmacy_sales s WHERE (s.patient_id = pp.id OR s.customer_name = pp.name) AND s.doctor_name IS NOT NULL AND s.doctor_name != '' ORDER BY s.sale_id DESC LIMIT 1),
+                (SELECT pr.doctor_name FROM pharmacy_prescriptions pr WHERE (pr.patient_id = pp.id OR pr.patient_name = pp.name) AND pr.doctor_name IS NOT NULL AND pr.doctor_name != '' ORDER BY pr.prescription_id DESC LIMIT 1)
+            ) as doctor_name
+        FROM pharmacy_patients pp
+        WHERE pp.status = 'Active'
+        ORDER BY pp.name ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
 
     $existingUhids = array_flip(array_filter(array_column($patients, 'hospital_uhid')));
@@ -262,7 +296,7 @@ if (empty($availableDoctors)) {
 
 // Fetch Active Medicines for Charge Items with all active batches (ordered by FEFO earliest expiry first)
 $medRows = $pdo->query("
-    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.dosage_form, m.category, m.unit, m.strength,
+    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.composition, m.dosage_form, m.category, m.unit, m.strength,
            m.manufacturer, m.price as mrp, m.price, COALESCE(m.purchase_price, 0) as purchase_price,
            m.gst_percent,
            mb.batch_id,
@@ -289,6 +323,7 @@ foreach ($medRows as $r) {
             'medicine_id'     => $mid,
             'medicine_name'   => $r['medicine_name'],
             'generic_name'    => $r['generic_name'],
+            'composition'     => $r['composition'] ?? '',
             'dosage_form'     => $r['dosage_form'],
             'category'        => $r['category'],
             'unit'            => $r['unit'],
@@ -378,34 +413,40 @@ include __DIR__ . '/../../includes/navbar.php';
     justify-content: space-between !important;
     padding: 10px 14px !important;
     border-bottom: 1px solid #f1f5f9 !important;
-    background: #ffffff !important;
-    background-color: #ffffff !important;
+    border-left: 4px solid transparent !important;
+    background-color: #ffffff;
     cursor: pointer !important;
     transition: all 0.15s ease !important;
 }
 .med-suggest-item:hover, .med-suggest-item.active-nav {
-    background-color: #f0fdf4 !important;
-    border-left: 3px solid #0d9488 !important;
+    background-color: #ecfdf5 !important;
+    border-left: 4px solid #059669 !important;
+}
+.med-suggest-item:hover .med-name-title, .med-suggest-item.active-nav .med-name-title {
+    color: #047857 !important;
 }
 .search-highlight {
     background: transparent !important;
     background-color: transparent !important;
     color: #059669 !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     padding: 0 !important;
+    border-radius: 0 !important;
 }
 .patient-match-color {
     background: transparent !important;
     background-color: transparent !important;
     color: #059669 !important;
     font-weight: 800 !important;
-    padding: 0 1px !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
 }
 
 /* Smooth keyboard sliding highlight for cart rows */
 .cart-row {
     transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
     outline: none !important;
+    height: auto !important;
 }
 .cart-row:focus, .cart-row.active-row-focus {
     background-color: #f0fdf4 !important;
@@ -414,11 +455,16 @@ include __DIR__ . '/../../includes/navbar.php';
 .cart-row:hover {
     background-color: #f8fafc;
 }
+#cartTable tbody tr.cart-row td {
+    padding: 10px 10px !important;
+    vertical-align: middle !important;
+    height: auto !important;
+}
 
 /* Interactive Batch & Expiry Switcher Dropdown */
 .batch-dropdown-container {
-    position: relative;
-    display: inline-block;
+    position: relative !important;
+    display: inline-block !important;
 }
 .expiry-picker-btn {
     transition: all 0.2s ease !important;
@@ -430,18 +476,23 @@ include __DIR__ . '/../../includes/navbar.php';
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1) !important;
 }
 .batch-expiry-menu {
+    position: absolute !important;
+    top: calc(100% + 4px) !important;
+    left: 0 !important;
     border-radius: 10px !important;
     border: 1px solid #cbd5e1 !important;
     background: #ffffff !important;
-    box-shadow: 0 16px 36px -4px rgba(15, 23, 42, 0.22) !important;
-    min-width: 340px !important;
+    background-color: #ffffff !important;
+    box-shadow: 0 16px 36px -4px rgba(15, 23, 42, 0.28), 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+    min-width: 320px !important;
     max-width: 380px !important;
-    z-index: 1090 !important;
+    z-index: 1099 !important;
 }
 .batch-option-item {
     transition: all 0.15s ease !important;
     border-radius: 8px !important;
     border: 1px solid transparent !important;
+    cursor: pointer !important;
 }
 .batch-option-item:hover {
     background-color: #f1f5f9 !important;
@@ -658,6 +709,25 @@ include __DIR__ . '/../../includes/navbar.php';
         </div>
     <?php endif; ?>
 
+    <!-- Unsaved Draft Recovery Notification Banner -->
+    <div id="draftRecoveryAlert" class="alert alert-warning alert-dismissible fade show d-none justify-content-between align-items-center shadow-xs border-warning-subtle mb-3 p-3" role="alert">
+        <div class="d-flex align-items-center gap-2">
+            <i class="ti ti-history fs-4 text-warning"></i>
+            <div>
+                <strong class="text-dark">Unsaved OPD Draft Found!</strong>
+                <div class="small text-muted" id="draftRecoveryMeta">You have an unsaved draft from a previous session.</div>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-sm btn-warning text-dark fw-bold px-3 py-1 shadow-xs" onclick="restoreDraft()">
+                <i class="ti ti-download me-1"></i> Restore Draft
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary px-3 py-1" onclick="discardDraft()">
+                <i class="ti ti-trash me-1"></i> Discard
+            </button>
+        </div>
+    </div>
+
     <!-- Main Create OPD Bill Card (Unified Full-Width Tab) -->
     <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
         <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -684,13 +754,14 @@ include __DIR__ . '/../../includes/navbar.php';
 
         <div class="card-body p-4">
             <!-- Form for backend submission -->
-            <form method="POST" id="posSaleForm">
+            <form method="POST" id="posSaleForm" onsubmit="event.preventDefault(); openBillingPreviewModal();">
                 <input type="hidden" name="action" value="complete_sale">
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
                 <input type="hidden" name="cart_items" id="cartItemsJson" value="[]">
                 <input type="hidden" name="idempotency_key" value="<?= bin2hex(random_bytes(16)) ?>">
                 
                 <!-- Hidden inputs passed to backend from modal / controls -->
+                <input type="hidden" name="patient_id" id="hiddenPatientId" value="">
                 <input type="hidden" name="customer_name" id="hiddenCustomerName" value="Walk-in Customer">
                 <input type="hidden" name="customer_mobile" id="hiddenCustomerMobile" value="">
                 <input type="hidden" name="doctor_name" id="hiddenDoctorName" value="">
@@ -709,7 +780,7 @@ include __DIR__ . '/../../includes/navbar.php';
                     <div id="patientSearchSection" class="p-3 bg-light rounded-3 border mb-3" style="background-color: #fbfcfd !important;">
                         <div class="d-flex justify-content-between align-items-center mb-1.5">
                             <label class="form-label small fw-semibold text-muted mb-0">
-                                <i class="ti ti-user-search text-emerald me-1"></i> Patient / Customer <span class="text-danger">*</span> <kbd class="kbd-chip ms-1">F4</kbd>
+                                <i class="ti ti-user-search text-emerald me-1"></i> Patient / Customer <span class="text-danger">*</span>
                             </label>
                             <button type="button" class="btn btn-sm py-1 px-3 text-decoration-none fw-semibold d-inline-flex align-items-center gap-1 rounded-pill" onclick="openNewOpdModal()" style="background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; font-size: 0.78rem;" title="Register a new patient">
                                 <i class="ti ti-plus"></i> New Register
@@ -725,6 +796,7 @@ include __DIR__ . '/../../includes/navbar.php';
                                        class="form-control form-control-lg fs-6 bg-white border-start-0 ps-1" 
                                        placeholder="Type patient name to search or select from list..." 
                                        autocomplete="off" 
+                                       autofocus
                                        oninput="onCounterPatientSearchInput(this.value)" 
                                        onfocus="onCounterPatientSearchFocus()" 
                                        onkeydown="onCounterPatientSearchKeydown(event)">
@@ -804,10 +876,10 @@ include __DIR__ . '/../../includes/navbar.php';
 
                     <!-- Hidden Select for form compatibility -->
                     <select id="patientSelect" class="d-none">
-                        <option value="" data-name="Walk-in Customer" data-mobile="" selected>100 2026 - Walk-in Customer</option>
+                        <option value="" data-name="Walk-in Customer" data-mobile="" data-doctor="" selected>100 2026 - Walk-in Customer</option>
                         <?php foreach ($patients as $p): ?>
-                            <option value="<?= $p['id'] ?>" data-name="<?= htmlspecialchars($p['name']) ?>" data-mobile="<?= htmlspecialchars($p['mobile']) ?>" data-uhid="<?= htmlspecialchars($p['hospital_uhid'] ?: $p['pharmacy_patient_no']) ?>">
-                                <?= htmlspecialchars(($p['hospital_uhid'] ?: $p['pharmacy_patient_no']) . ' - ' . $p['name'] . ($p['mobile'] ? ' (' . $p['mobile'] . ')' : '')) ?>
+                            <option value="<?= $p['id'] ?>" data-name="<?= htmlspecialchars($p['name']) ?>" data-mobile="<?= htmlspecialchars($p['mobile']) ?>" data-uhid="<?= htmlspecialchars($p['hospital_uhid'] ?: $p['pharmacy_patient_no']) ?>" data-doctor="<?= htmlspecialchars($p['doctor_name'] ?? '') ?>">
+                                <?= htmlspecialchars(($p['hospital_uhid'] ?: $p['pharmacy_patient_no']) . ' - ' . $p['name'] . ($p['mobile'] ? ' (' . $p['mobile'] . ')' : '') . (!empty($p['doctor_name']) ? ' [' . $p['doctor_name'] . ']' : '')) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -816,7 +888,7 @@ include __DIR__ . '/../../includes/navbar.php';
                     <div class="p-3 bg-light rounded-3 border mb-3" style="background-color: #fbfcfd !important;">
                         <div class="d-flex justify-content-between align-items-center mb-1.5">
                             <label class="form-label small fw-semibold text-muted mb-0">
-                                <i class="ti ti-pill text-emerald me-1"></i> Search &amp; Add Medicine / Charge <span class="text-danger">*</span> <kbd class="kbd-chip ms-1">F2</kbd>
+                                <i class="ti ti-pill text-emerald me-1"></i> Search &amp; Add Medicine / Charge <span class="text-danger">*</span>
                             </label>
                             <span class="text-muted small" style="font-size: 0.72rem;">
                                 <i class="ti ti-bolt text-warning me-0.5"></i> Select any medicine to automatically add it to charges
@@ -879,24 +951,25 @@ include __DIR__ . '/../../includes/navbar.php';
                                 Total: ₹0.00
                             </span>
                         </div>
-                        <div class="card border rounded-3 overflow-hidden shadow-xs">
-                            <div class="table-responsive">
+                        <div class="card border rounded-3 shadow-xs" style="overflow: visible !important;">
+                            <div class="table-responsive" style="overflow: visible !important;">
                                 <table class="table table-hover align-middle mb-0" id="cartTable">
                                     <thead class="table-light small text-muted text-uppercase" style="font-size: 0.74rem;">
                                         <tr>
-                                            <th style="width: 5%;">S.NO</th>
-                                            <th style="width: 32%;">CHARGE / MEDICINE NAME</th>
-                                            <th style="width: 14%;">EXPIRY DATE</th>
-                                            <th class="text-end" style="width: 11%;">MFG RATE</th>
-                                            <th class="text-end" style="width: 11%;">BILL RATE</th>
-                                            <th class="text-center" style="width: 10%;">QTY</th>
-                                            <th class="text-end" style="width: 11%;">TOTAL</th>
-                                            <th class="text-center" style="width: 6%;"></th>
+                                            <th style="width: 4%;">S.NO</th>
+                                            <th style="width: 25%;">CHARGE / MEDICINE NAME</th>
+                                            <th style="width: 20%;">CONTAINS / COMPOSITION</th>
+                                            <th style="width: 13%;">EXPIRY DATE</th>
+                                            <th class="text-end" style="width: 9%;">MFG RATE</th>
+                                            <th class="text-end" style="width: 9%;">BILL RATE</th>
+                                            <th class="text-center" style="width: 8%;">QTY</th>
+                                            <th class="text-end" style="width: 9%;">TOTAL</th>
+                                            <th class="text-center" style="width: 3%;"></th>
                                         </tr>
                                     </thead>
                                     <tbody id="cartTableBody">
                                         <tr id="emptyCartRow">
-                                            <td colspan="8" class="text-center py-4 text-muted small">
+                                            <td colspan="9" class="text-center py-4 text-muted small">
                                                 No charges added yet. Search a medicine above to automatically add to this bill.
                                             </td>
                                         </tr>
@@ -917,12 +990,109 @@ include __DIR__ . '/../../includes/navbar.php';
                                 <i class="ti ti-device-floppy"></i> Save Draft
                             </button>
                             <button type="button" id="btnProceedPreview" class="btn btn-emerald d-inline-flex align-items-center gap-1.5 px-4 py-2 fw-semibold shadow-sm" onclick="openBillingPreviewModal()" style="border-radius: 8px;">
-                                Proceed to Billing Preview <kbd class="kbd-chip ms-1" style="background: rgba(255,255,255,0.25); color: #fff;">F8</kbd> &rarr;
+                                Proceed to Billing Preview &rarr;
                             </button>
                         </div>
                     </div>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Recent OPD Bills Section -->
+    <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
+        <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2.5">
+                <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 38px; height: 38px; border-radius: 10px; background-color: #f0fdf4; color: #059669; border: 1px solid #a7f3d0;">
+                    <i class="ti ti-history fs-5"></i>
+                </div>
+                <div>
+                    <h5 class="fw-bold mb-0 text-dark" style="font-size: 1.05rem;">Recent OPD Bills</h5>
+                    <div class="text-muted small" style="font-size: 0.76rem;">View, reprint, or inspect recently generated counter sale invoices</div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <a href="<?= BASE_URL ?>modules/sales/monitoring.php?sale_type=COUNTER_SALE" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs" style="font-size: 0.80rem;">
+                    <i class="ti ti-external-link"></i> Full Sales Registry
+                </a>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="font-size: 0.86rem;">
+                    <thead class="table-light text-muted text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.04em;">
+                        <tr>
+                            <th class="py-2.5 px-3">Invoice #</th>
+                            <th class="py-2.5 px-3">Date &amp; Time</th>
+                            <th class="py-2.5 px-3">Patient / Customer</th>
+                            <th class="py-2.5 px-3">Doctor</th>
+                            <th class="py-2.5 px-2 text-center">Items</th>
+                            <th class="py-2.5 px-3 text-end">Grand Total</th>
+                            <th class="py-2.5 px-3 text-center">Payment Status</th>
+                            <th class="py-2.5 px-3 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y">
+                        <?php if (empty($recentOpdBills)): ?>
+                            <tr>
+                                <td colspan="8" class="text-center py-4 text-muted">
+                                    <i class="ti ti-file-invoice text-secondary fs-3 d-block mb-1"></i>
+                                    No counter sale bills generated yet today.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($recentOpdBills as $b): ?>
+                                <tr>
+                                    <td class="py-2.5 px-3 font-monospace fw-bold">
+                                        <a href="invoice.php?id=<?= $b['sale_id'] ?>" target="_blank" class="text-decoration-none text-primary">
+                                            <?= htmlspecialchars($b['sale_number']) ?>
+                                        </a>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-muted small font-monospace">
+                                        <?= date('d M Y, h:i A', strtotime($b['created_at'])) ?>
+                                    </td>
+                                    <td class="py-2.5 px-3">
+                                        <div class="fw-bold text-dark"><?= htmlspecialchars($b['customer_name']) ?></div>
+                                        <?php if (!empty($b['customer_mobile'])): ?>
+                                            <div class="text-muted small" style="font-size: 0.74rem;"><i class="ti ti-phone me-1"></i><?= htmlspecialchars($b['customer_mobile']) ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-muted small">
+                                        <?= htmlspecialchars($b['doctor_name'] ?: '—') ?>
+                                    </td>
+                                    <td class="py-2.5 px-2 text-center">
+                                        <span class="badge bg-light text-dark border"><?= (int)$b['items_count'] ?> items</span>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-end font-monospace fw-bold text-success" style="font-size: 0.92rem;">
+                                        ₹<?= number_format((float)$b['grand_total'], 2) ?>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-center">
+                                        <?php if ($b['payment_status'] === 'PAID'): ?>
+                                            <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-1" style="font-size: 0.72rem;">PAID</span>
+                                        <?php elseif ($b['payment_status'] === 'PARTIALLY_PAID'): ?>
+                                            <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-2 py-1" style="font-size: 0.72rem;">PARTIAL</span>
+                                        <?php elseif ($b['payment_status'] === 'CANCELLED'): ?>
+                                            <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" style="font-size: 0.72rem;">CANCELLED</span>
+                                        <?php else: ?>
+                                            <span class="badge rounded-pill bg-secondary-subtle text-secondary border px-2 py-1" style="font-size: 0.72rem;">UNPAID</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-center">
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="invoice.php?id=<?= $b['sale_id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary px-2 py-1" title="Print Invoice">
+                                                <i class="ti ti-printer"></i>
+                                            </a>
+                                            <a href="invoice.php?id=<?= $b['sale_id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary px-2 py-1" title="View Bill">
+                                                <i class="ti ti-eye"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -960,6 +1130,44 @@ include __DIR__ . '/../../includes/navbar.php';
                     }
                     @media (max-width: 576px) {
                         .opd-patient-strip { grid-template-columns: 1fr; }
+                    }
+                    .discount-segmented-control {
+                        display: inline-flex;
+                        align-items: center;
+                        background-color: #f1f5f9;
+                        border: 1px solid #cbd5e1;
+                        border-radius: 8px;
+                        padding: 3px;
+                        gap: 3px;
+                        user-select: none;
+                        box-sizing: border-box;
+                    }
+                    .discount-seg-btn {
+                        border: none !important;
+                        background: transparent !important;
+                        color: #475569 !important;
+                        font-weight: 600 !important;
+                        font-size: 0.78rem !important;
+                        padding: 4px 11px !important;
+                        border-radius: 6px !important;
+                        cursor: pointer !important;
+                        transition: all 0.15s ease-in-out !important;
+                        line-height: 1.25 !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        white-space: nowrap !important;
+                        box-shadow: none !important;
+                    }
+                    .discount-seg-btn:hover:not(.active) {
+                        color: #0f172a !important;
+                        background-color: #e2e8f0 !important;
+                    }
+                    .discount-seg-btn.active {
+                        background-color: #059669 !important;
+                        color: #ffffff !important;
+                        font-weight: 700 !important;
+                        box-shadow: 0 1px 3px rgba(5, 150, 105, 0.3) !important;
                     }
                 </style>
 
@@ -1036,7 +1244,7 @@ include __DIR__ . '/../../includes/navbar.php';
                                 </span>
                             </div>
                             
-                            <div class="d-flex flex-column" style="gap: 12px;">
+                            <div class="d-flex flex-column" style="gap: 14px;">
                                 <div>
                                     <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Attending Doctor / Prescriber</label>
                                     <div class="input-group input-group-sm">
@@ -1048,32 +1256,14 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Dispensing Notes / Remarks</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-card-text"></i></span>
-                                        <input type="text" id="modalNotesInput" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="e.g. OPD prescription dispensing...">
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Billing / Settlement Mode</label>
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-wallet2"></i></span>
-                                        <select id="modalPaymentMode" class="form-select form-select-sm fw-semibold border-start-0" style="height: 34px;" onchange="onModalPaymentModeChange(this.value)">
-                                            <option value="CASH" selected>Direct Cash Settlement</option>
-                                            <option value="UPI">UPI / QR Code</option>
-                                            <option value="CARD">Debit / Credit Card</option>
-                                            <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
-                                            <option value="CREDIT">Hospital Credit (Due)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div id="modalRefGroup" class="d-none">
-                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Transaction Ref / UTR</label>
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-hash"></i></span>
-                                        <input type="text" id="modalPaymentRef" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="Ref / UTR / Card Auth code">
+                                        <input type="text" id="modalNotesInput" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="e.g. OPD prescription dispensing..." onkeydown="if(event.key==='Enter'||(event.key==='Tab'&&!event.shiftKey)){event.preventDefault();document.getElementById('modalPaymentMode').focus();}">
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div style="height: 4px;"></div>
+                        <div class="p-2.5 rounded-2 bg-light border text-muted small mt-3" style="font-size: 0.74rem;">
+                            <i class="ti ti-keyboard text-emerald me-1"></i> <span class="fw-semibold">Keyboard Flow:</span> Use <kbd class="bg-white border px-1">Tab</kbd> or <kbd class="bg-white border px-1">Enter</kbd> to move from Payment Mode &rarr; Discount &rarr; Amount Tendered &rarr; Confirm (<kbd class="bg-white border px-1">F9</kbd>).
+                        </div>
                     </div>
 
                     <!-- Right: Financial Summary & Net Calculations -->
@@ -1086,34 +1276,70 @@ include __DIR__ . '/../../includes/navbar.php';
                                 <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.72rem;">All values in INR (₹)</span>
                             </div>
 
-                            <div class="d-flex flex-column" style="gap: 8px;">
-                                <!-- Subtotal Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 30px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Subtotal (Gross):</span>
-                                    <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblSubtotal">₹0.00</span>
-                                </div>
-
-                                <!-- Discount Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 30px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Discount (%):</span>
-                                    <div class="d-flex align-items-center justify-content-end">
-                                        <div class="input-group input-group-sm" style="width: 85px;">
-                                            <input type="number" step="0.1" min="0" max="50" id="modalDiscountPercent" class="form-control form-control-sm text-end fw-bold font-monospace py-0.5 px-1.5" style="font-size: 0.85rem; height: 28px;" value="0.0" oninput="recalcModalTotals()">
-                                            <span class="input-group-text bg-light text-muted py-0 px-1.5 font-monospace" style="font-size: 0.75rem; height: 28px;">%</span>
-                                        </div>
+                            <div class="d-flex flex-column" style="gap: 10px;">
+                                <!-- 1. Billing / Settlement Mode Row -->
+                                <div>
+                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Billing / Settlement Mode</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-wallet2"></i></span>
+                                        <select id="modalPaymentMode" class="form-select form-select-sm fw-semibold border-start-0" style="height: 34px;" onchange="onModalPaymentModeChange(this.value)" onkeydown="handleModalModeKeydown(event)">
+                                            <option value="CASH" selected>Direct Cash Settlement</option>
+                                            <option value="UPI">UPI / QR Code</option>
+                                            <option value="CARD">Debit / Credit Card</option>
+                                            <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                                            <option value="CREDIT">Hospital Credit (Due)</option>
+                                        </select>
                                     </div>
                                 </div>
 
-                                <!-- Discount Amount Row (Dynamic) -->
-                                <div class="justify-content-between align-items-center text-danger d-none" id="modalRowDiscount" style="min-height: 30px;">
-                                    <span class="fw-semibold" style="font-size: 0.84rem;">Discount Amount:</span>
-                                    <span class="fw-bold font-monospace text-end" style="font-size: 0.92rem;" id="modalLblDiscountAmt">-₹0.00</span>
+                                <!-- 2. Transaction Ref / UTR (Conditional) -->
+                                <div id="modalRefGroup" class="d-none">
+                                    <label class="form-label text-secondary fw-semibold mb-1" style="font-size: 0.78rem; display: block;">Transaction Ref / UTR</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-light text-muted border-end-0" style="width: 38px; justify-content: center;"><i class="bi bi-hash"></i></span>
+                                        <input type="text" id="modalPaymentRef" class="form-control form-control-sm border-start-0" style="height: 34px;" placeholder="Ref / UTR / Card Auth code" onkeydown="handleModalRefKeydown(event)">
+                                    </div>
                                 </div>
 
-                                <!-- GST Row -->
-                                <div class="d-flex justify-content-between align-items-center" style="min-height: 30px;">
-                                    <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">GST (Tax Inclusive):</span>
-                                    <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblGst">₹0.00</span>
+                                <div class="border-top pt-2 d-flex flex-column" style="gap: 8px;">
+                                    <!-- Subtotal Row -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 28px;">
+                                        <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">Subtotal (Gross):</span>
+                                        <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblSubtotal">₹0.00</span>
+                                    </div>
+
+                                    <!-- Discount Row (Visible Segmented Options: Discount % / Flat ₹) -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 34px;">
+                                        <div class="d-flex align-items-center">
+                                            <input type="hidden" id="modalDiscountType" value="PERCENT">
+                                            <div class="discount-segmented-control" id="discountTypeBtnGroup">
+                                                <button type="button" class="discount-seg-btn active" id="btnDiscPercent" onclick="setDiscountMode('PERCENT')">
+                                                    % Discount
+                                                </button>
+                                                <button type="button" class="discount-seg-btn" id="btnDiscFlat" onclick="setDiscountMode('FLAT')">
+                                                    ₹ Flat
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center justify-content-end">
+                                            <div class="input-group input-group-sm" style="width: 105px;">
+                                                <input type="number" step="1" min="0" max="50" id="modalDiscountValue" class="form-control form-control-sm text-end fw-bold font-monospace py-0.5 px-2" style="font-size: 0.88rem; height: 30px;" value="0" placeholder="0" oninput="recalcModalTotals()" onkeydown="handleModalDiscountKeydown(event)">
+                                                <span class="input-group-text bg-light text-muted py-0 px-2 font-monospace fw-bold" id="modalDiscountAddon" style="font-size: 0.78rem; height: 30px;">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Discount Amount Row (Dynamic) -->
+                                    <div class="justify-content-between align-items-center text-danger d-none" id="modalRowDiscount" style="min-height: 28px;">
+                                        <span class="fw-semibold" style="font-size: 0.84rem;">Discount Amount:</span>
+                                        <span class="fw-bold font-monospace text-end" style="font-size: 0.92rem;" id="modalLblDiscountAmt">-₹0.00</span>
+                                    </div>
+
+                                    <!-- GST Row -->
+                                    <div class="d-flex justify-content-between align-items-center" style="min-height: 28px;">
+                                        <span class="text-secondary fw-semibold" style="font-size: 0.84rem;">GST (Tax Inclusive):</span>
+                                        <span class="fw-bold font-monospace text-dark text-end" style="font-size: 0.92rem;" id="modalLblGst">₹0.00</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1127,7 +1353,7 @@ include __DIR__ . '/../../includes/navbar.php';
                             <div class="d-flex justify-content-between align-items-center pt-2 border-top border-emerald-subtle">
                                 <span class="small fw-bold text-dark">Amount Tendered:</span>
                                 <div style="width: 130px;">
-                                    <input type="number" step="any" min="0" id="modalPaidInput" class="form-control form-control-sm text-end fw-bold font-monospace" placeholder="0.00" oninput="recalcModalChange()" onkeydown="if(event.key==='Enter'){event.preventDefault();submitFinalSale();}">
+                                    <input type="number" step="any" min="0" id="modalPaidInput" class="form-control form-control-sm text-end fw-bold font-monospace" placeholder="0.00" oninput="recalcModalChange()" onkeydown="handleModalPaidKeydown(event)">
                                 </div>
                             </div>
                         </div>
@@ -1271,9 +1497,16 @@ function onCounterPatientSearchInput(query) {
     query = (query || '').trim().toLowerCase();
     if (query === 'walk-in customer') query = '';
 
+    if (!query) {
+        list.classList.add('d-none');
+        list.innerHTML = '';
+        activeCounterPatientSuggestions = [];
+        selectedCounterPatientIndex = -1;
+        return;
+    }
+
     // 1. Filter matches
     let matches = opdPatientsList.filter(p => {
-        if (!query) return true;
         const rawName = (p.name || '').trim().toLowerCase();
         const uhid = (p.hospital_uhid || p.pharmacy_patient_no || '').trim().toLowerCase();
         const mob = (p.mobile || '').trim().toLowerCase();
@@ -1401,37 +1634,64 @@ function onCounterPatientSearchInput(query) {
 
 function onCounterPatientSearchFocus() {
     const input = document.getElementById('counterPatientSearchInput');
-    const val = input ? input.value : '';
-    onCounterPatientSearchInput(val);
+    const val = input ? input.value.trim() : '';
+    if (val && val.toLowerCase() !== 'walk-in customer') {
+        onCounterPatientSearchInput(val);
+    } else {
+        const list = document.getElementById('counterPatientSuggestionsList');
+        if (list) {
+            list.classList.add('d-none');
+            list.innerHTML = '';
+        }
+    }
 }
 
 function onCounterPatientSearchKeydown(e) {
     const list = document.getElementById('counterPatientSuggestionsList');
-    if (list.classList.contains('d-none') || activeCounterPatientSuggestions.length === 0) {
-        return;
+    const isShowing = list && !list.classList.contains('d-none') && activeCounterPatientSuggestions.length > 0;
+
+    if (isShowing) {
+        const items = list.querySelectorAll('.patient-suggest-item');
+        if (items.length > 0) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedCounterPatientIndex = (selectedCounterPatientIndex + 1) % items.length;
+                updateActiveCounterPatientItem(items);
+                return;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedCounterPatientIndex = (selectedCounterPatientIndex - 1 + items.length) % items.length;
+                updateActiveCounterPatientItem(items);
+                return;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedCounterPatientIndex >= 0 && selectedCounterPatientIndex < items.length) {
+                    items[selectedCounterPatientIndex].click();
+                } else if (activeCounterPatientSuggestions.length > 0) {
+                    selectCounterPatientById(activeCounterPatientSuggestions[0].id);
+                }
+                return;
+            } else if (e.key === 'Escape') {
+                list.classList.add('d-none');
+                selectedCounterPatientIndex = -1;
+                return;
+            }
+        }
     }
 
-    const items = list.querySelectorAll('.patient-suggest-item');
-    if (items.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
+    // When Enter or Tab is pressed on Patient input:
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
         e.preventDefault();
-        selectedCounterPatientIndex = (selectedCounterPatientIndex + 1) % items.length;
-        updateActiveCounterPatientItem(items);
-    } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        selectedCounterPatientIndex = (selectedCounterPatientIndex - 1 + items.length) % items.length;
-        updateActiveCounterPatientItem(items);
-    } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (selectedCounterPatientIndex >= 0 && selectedCounterPatientIndex < items.length) {
-            items[selectedCounterPatientIndex].click();
-        } else if (activeCounterPatientSuggestions.length > 0) {
+        if (isShowing && activeCounterPatientSuggestions.length > 0) {
             selectCounterPatientById(activeCounterPatientSuggestions[0].id);
+        } else {
+            // Focus medicine search
+            const medInput = document.getElementById('chargeMedicineInput');
+            if (medInput) {
+                medInput.focus();
+                medInput.select();
+            }
         }
-    } else if (e.key === 'Escape') {
-        list.classList.add('d-none');
-        selectedCounterPatientIndex = -1;
     }
 }
 
@@ -1484,13 +1744,14 @@ function selectCounterPatientById(patientId) {
 
     const btnClear = document.getElementById('btnClearCounterPatient');
     if (btnClear) btnClear.classList.remove('d-none');
-
-    if (p.doctor_name) {
-        const docInp = document.getElementById('displayDoctorName');
-        if (docInp) docInp.value = p.doctor_name;
-        document.getElementById('hiddenDoctorName').value = p.doctor_name;
-        document.getElementById('modalDoctorInput').value = p.doctor_name;
-    }
+    
+    const defaultDoctor = p.doctor_name || '';
+    const docInp = document.getElementById('displayDoctorName');
+    if (docInp) docInp.value = defaultDoctor;
+    const hiddenDoc = document.getElementById('hiddenDoctorName');
+    if (hiddenDoc) hiddenDoc.value = defaultDoctor;
+    const modalDoc = document.getElementById('modalDoctorInput');
+    if (modalDoc) modalDoc.value = defaultDoctor;
 
     document.getElementById('counterPatientSuggestionsList').classList.add('d-none');
     selectedCounterPatientIndex = -1;
@@ -1501,12 +1762,18 @@ function selectCounterPatientById(patientId) {
             medInput.focus();
             medInput.select();
         }
-    }, 120);
+    }, 80);
 }
 
 function resetToWalkInCustomer() {
     document.getElementById('hiddenCustomerName').value = 'Walk-in Customer';
     document.getElementById('hiddenCustomerMobile').value = '';
+    document.getElementById('hiddenDoctorName').value = '';
+
+    const docInp = document.getElementById('displayDoctorName');
+    if (docInp) docInp.value = '';
+    const modalDoc = document.getElementById('modalDoctorInput');
+    if (modalDoc) modalDoc.value = '';
 
     const select = document.getElementById('patientSelect');
     if (select) select.value = '';
@@ -1641,23 +1908,57 @@ function highlightMatch(text, query) {
     if (!query) return escapeHtml(text);
     const escaped = escapeHtml(text);
     const qEscaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(^|\\s)(${qEscaped})`, 'gi');
-    return escaped.replace(regex, '$1<span class="search-highlight">$2</span>');
+    const regex = new RegExp(`(${qEscaped})`, 'gi');
+    return escaped.replace(regex, '<span class="search-highlight">$1</span>');
 }
 
 function getMedicineIconInfo(m) {
     const dosage = (m.dosage_form || '').toLowerCase();
     const cat = (m.category || '').toLowerCase();
-    if (dosage.includes('syrup') || cat.includes('syrup') || dosage.includes('liquid') || dosage.includes('suspension')) {
-        return { icon: 'bi-droplet-half', cls: 'syrup' };
+    const name = (m.medicine_name || '').toLowerCase();
+
+    // 1. Injections / IV / Syringe / Vials / Ampoules / Infusion
+    if (dosage.includes('inj') || cat.includes('inj') || name.includes('inj') ||
+        dosage.includes('iv') || dosage.includes('infusion') || dosage.includes('vial') ||
+        dosage.includes('ampoule') || dosage.includes('syringe') || cat.includes('inject')) {
+        return { icon: 'ti ti-syringe', cls: 'injection', bg: '#fce7f3', color: '#db2777' };
     }
-    if (dosage.includes('inj') || cat.includes('inj') || dosage.includes('iv') || dosage.includes('infusion')) {
-        return { icon: 'bi-eyedropper', cls: 'injection' };
+
+    // 2. Syrups / Liquids / Suspensions / Solutions / Oral Drops
+    if (dosage.includes('syrup') || cat.includes('syrup') || name.includes('syrup') ||
+        dosage.includes('susp') || dosage.includes('liquid') || dosage.includes('oral') ||
+        dosage.includes('solution') || cat.includes('susp')) {
+        return { icon: 'ti ti-bottle', cls: 'syrup', bg: '#fef3c7', color: '#d97706' };
     }
-    if (dosage.includes('tab') || dosage.includes('cap') || cat.includes('tab') || cat.includes('cap')) {
-        return { icon: 'bi-capsule', cls: 'tablet' };
+
+    // 3. Inhaler / MDI / Spray / Respules
+    if (dosage.includes('inhal') || cat.includes('inhal') || name.includes('inhal') ||
+        dosage.includes('spray') || name.includes('mdi') || dosage.includes('resp') ||
+        name.includes('spray')) {
+        return { icon: 'ti ti-spray', cls: 'inhaler', bg: '#ecfeff', color: '#0891b2' };
     }
-    return { icon: 'bi-prescription2', cls: 'general' };
+
+    // 4. Drops (Eye / Ear)
+    if (dosage.includes('drop') || cat.includes('drop') || name.includes('drop')) {
+        return { icon: 'ti ti-droplet', cls: 'drops', bg: '#e0f2fe', color: '#0284c7' };
+    }
+
+    // 5. Creams / Ointments / Gels / Balms
+    if (dosage.includes('cream') || dosage.includes('ointment') || dosage.includes('gel') ||
+        cat.includes('cream') || cat.includes('ointment') || name.includes('gel') ||
+        name.includes('cream') || name.includes('ointment')) {
+        return { icon: 'ti ti-bandage', cls: 'ointment', bg: '#fdf4ff', color: '#a21caf' };
+    }
+
+    // 6. Tablets / Capsules / Pills / Strip / Lozenges / Cap / Tab
+    if (dosage.includes('tab') || cat.includes('tab') || name.includes('tablet') || name.includes(' tab') ||
+        dosage.includes('cap') || cat.includes('cap') || name.includes('capsule') || name.includes(' cap') ||
+        dosage.includes('pill') || dosage.includes('strip') || dosage.includes('lozenge')) {
+        return { icon: 'ti ti-pill', cls: 'tablet', bg: '#eff6ff', color: '#2563eb' };
+    }
+
+    // Default for medicines (Tablet / Pill icon)
+    return { icon: 'ti ti-pill', cls: 'tablet', bg: '#eff6ff', color: '#2563eb' };
 }
 
 function getExpiryStatus(dateStr) {
@@ -1792,37 +2093,37 @@ function onMedicineSearchInput(query) {
 
     query = (query || '').trim().toLowerCase();
 
-    // Do NOT show dropdown if input is empty - only visible as user searches by letters
     if (!query) {
-        suggestionsBox.innerHTML = '';
         suggestionsBox.classList.add('d-none');
+        suggestionsBox.innerHTML = '';
         activeSuggestions = [];
         selectedSuggestionIndex = -1;
         return;
     }
 
-    // Search across ALL catalog medicines without category restriction
     const qLower = query.toLowerCase();
     let matches = catalogMedicines.filter(m => {
         const name = (m.medicine_name || '').trim().toLowerCase();
         const generic = (m.generic_name || '').trim().toLowerCase();
+        const comp = (m.composition || '').trim().toLowerCase();
         const barcode = (m.barcode || '').trim().toLowerCase();
         if (barcode && barcode.includes(qLower)) return true;
         if (name.includes(qLower)) return true;
         if (generic && generic.includes(qLower)) return true;
+        if (comp && comp.includes(qLower)) return true;
         return false;
     });
 
-    // Sort by relevance: first word starts with query first, then alphabetical
-    matches.sort((a, b) => {
-        const nameA = (a.medicine_name || '').trim().toLowerCase();
-        const nameB = (b.medicine_name || '').trim().toLowerCase();
-        const aStartsFirst = nameA.startsWith(qLower);
-        const bStartsFirst = nameB.startsWith(qLower);
-        if (aStartsFirst && !bStartsFirst) return -1;
-        if (!aStartsFirst && bStartsFirst) return 1;
-        return nameA.localeCompare(nameB);
-    });
+        // Sort by relevance: first word starts with query first, then alphabetical
+        matches.sort((a, b) => {
+            const nameA = (a.medicine_name || '').trim().toLowerCase();
+            const nameB = (b.medicine_name || '').trim().toLowerCase();
+            const aStartsFirst = nameA.startsWith(qLower);
+            const bStartsFirst = nameB.startsWith(qLower);
+            if (aStartsFirst && !bStartsFirst) return -1;
+            if (!aStartsFirst && bStartsFirst) return 1;
+            return nameA.localeCompare(nameB);
+        });
 
     activeSuggestions = matches;
     selectedSuggestionIndex = -1;
@@ -1832,7 +2133,7 @@ function onMedicineSearchInput(query) {
             <div class="p-3 text-center text-muted">
                 <i class="ti ti-package-off text-secondary opacity-50 d-block fs-2 mb-1"></i>
                 <div class="fw-semibold small text-dark">No matching medicines found for "${escapeHtml(query)}"</div>
-                <div class="small text-muted mt-1">Try typing brand name or chemical composition</div>
+                <div class="small text-muted mt-1">Try typing brand name, generic name, or active composition</div>
             </div>
         `;
         suggestionsBox.classList.remove('d-none');
@@ -1857,11 +2158,12 @@ function onMedicineSearchInput(query) {
 
         const highlightedName = highlightMatch(m.medicine_name, query);
         const genericStr = m.generic_name ? highlightMatch(m.generic_name, query) : '';
+        const compStr = m.composition ? highlightMatch(m.composition, query) : '';
         const dosageStr = m.dosage_form || m.unit || 'unit';
         const catStr = m.category || 'General';
 
-        const iconBg = iconInfo.cls === 'tablet' ? '#eff6ff' : iconInfo.cls === 'syrup' ? '#fef3c7' : iconInfo.cls === 'injection' ? '#fce7f3' : '#f1f5f9';
-        const iconColor = iconInfo.cls === 'tablet' ? '#2563eb' : iconInfo.cls === 'syrup' ? '#d97706' : iconInfo.cls === 'injection' ? '#db2777' : '#64748b';
+        const iconBg = iconInfo.bg || '#eff6ff';
+        const iconColor = iconInfo.color || '#2563eb';
         const mfgRate = parseFloat(m.purchase_price || 0).toFixed(2);
         const expDate = m.expiry_date || 'N/A';
         const expStatus = getExpiryStatus(expDate);
@@ -1869,20 +2171,25 @@ function onMedicineSearchInput(query) {
 
         html += `
             <div class="med-suggest-item ${isOutOfStock ? 'disabled' : ''}" data-index="${idx}" onclick="selectMedicineSuggestion(${m.medicine_id})"
-                 style="background: #ffffff !important; background-color: #ffffff !important; display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 14px !important; border-bottom: 1px solid #f1f5f9 !important; cursor: pointer !important; text-decoration: none !important;">
+                 style="display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 14px !important; border-bottom: 1px solid #f1f5f9 !important; cursor: pointer !important; text-decoration: none !important;">
                 <div class="d-flex align-items-center me-2 text-start flex-grow-1" style="min-width: 0;">
-                    <div class="med-icon-box ${iconInfo.cls}" style="width: 38px; height: 38px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.1rem; margin-right: 12px; background-color: ${iconBg}; color: ${iconColor};">
-                        <i class="bi ${iconInfo.icon}"></i>
+                    <div class="med-icon-box ${iconInfo.cls}" style="width: 38px; height: 38px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.25rem; margin-right: 12px; background-color: ${iconBg}; color: ${iconColor};">
+                        <i class="${iconInfo.icon}"></i>
                     </div>
                     <div style="min-width: 0;">
                         <div class="med-name-title text-truncate" style="font-weight: 600; font-size: 0.90rem; color: #0f172a; line-height: 1.28;">${highlightedName}</div>
+                        ${compStr ? `
+                            <div class="med-composition-badge mt-0.5" style="font-size: 0.72rem; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 3px;">
+                                <i class="ti ti-flask"></i><span class="fw-bold">Contains:</span> ${compStr}
+                            </div>
+                        ` : ''}
                         <div class="med-meta-desc" style="font-size: 0.74rem; color: #64748b; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <span class="med-category-chip" style="font-size: 0.66rem; font-weight: 600; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">${escapeHtml(catStr)}</span>
                             <span class="badge bg-light text-secondary border" style="font-size: 0.68rem;"><i class="bi bi-building me-1 text-primary"></i>${escapeHtml(manufacturer)}</span>
                             <span class="badge ${expStatus.cls}" style="font-size: 0.68rem; background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border: 1px solid ${expStatus.badgeBorder} !important;" title="${expStatus.tag}: ${expStatus.label}">
                                 <i class="bi ${expStatus.icon} me-1"></i>Exp: ${escapeHtml(expDate)} <span class="fw-bold">(${expStatus.label})</span>
                             </span>
-                            <span class="text-truncate">${genericStr ? genericStr + ' &bull; ' : ''}${escapeHtml(dosageStr)}</span>
+                            <span class="text-truncate">${genericStr && genericStr !== compStr ? genericStr + ' &bull; ' : ''}${escapeHtml(dosageStr)}</span>
                         </div>
                     </div>
                 </div>
@@ -1909,11 +2216,14 @@ function onMedicineSearchInput(query) {
 function onMedicineSearchFocus() {
     const input = document.getElementById('chargeMedicineInput');
     const val = input ? input.value.trim() : '';
-    if (val.length > 0) {
+    if (val) {
         onMedicineSearchInput(val);
     } else {
         const suggestionsBox = document.getElementById('medicineSuggestionsList');
-        if (suggestionsBox) suggestionsBox.classList.add('d-none');
+        if (suggestionsBox) {
+            suggestionsBox.classList.add('d-none');
+            suggestionsBox.innerHTML = '';
+        }
     }
 }
 
@@ -1951,13 +2261,43 @@ function onMedicineInputKeydown(e) {
         }
     }
 
-    // When search is empty or no suggestions showing:
-    // Pressing Enter, Tab, or ArrowDown escapes the search box and slides down into the table rows
-    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    // When Enter is pressed in medicine search:
+    if (e.key === 'Enter') {
+        if (activeSuggestions.length > 0) {
+            e.preventDefault();
+            selectMedicineSuggestion(activeSuggestions[0].medicine_id);
+            return;
+        }
+    }
+
+    // When Tab is pressed: directly triggers and opens Proceed to Billing Preview modal!
+    if (e.key === 'Tab' && !e.shiftKey) {
         if (cart.length > 0) {
             e.preventDefault();
-            focusCartRow(0);
+            if (suggestionsBox) suggestionsBox.classList.add('d-none');
+            openBillingPreviewModal();
+            return;
         }
+    }
+
+    // ArrowDown redirects directly into the quantity input of the selected medicine
+    if (e.key === 'ArrowDown') {
+        if (cart.length > 0) {
+            e.preventDefault();
+            focusCartQty(0);
+            return;
+        }
+    }
+
+    // ArrowUp redirects back up to the Patient search input
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const pInput = document.getElementById('counterPatientSearchInput');
+        if (pInput) {
+            pInput.focus();
+            pInput.select();
+        }
+        return;
     }
 }
 
@@ -2124,6 +2464,8 @@ function selectMedicineSuggestion(medicineId) {
         cart.push({
             medicine_id: med.medicine_id,
             medicine_name: med.medicine_name,
+            generic_name: med.generic_name || '',
+            composition: med.composition || '',
             batch_id: batchId,
             batch_number: batchNumber,
             manufacturer: manufacturer,
@@ -2138,14 +2480,15 @@ function selectMedicineSuggestion(medicineId) {
         });
     }
 
+    const targetIdx = existingIdx !== -1 ? existingIdx : cart.length - 1;
+
     // Immediately render updated cart
     renderCart();
 
-    // Clear medicine search input and refocus for rapid subsequent addition
+    // Clear medicine search input
     const medInput = document.getElementById('chargeMedicineInput');
     if (medInput) {
         medInput.value = '';
-        medInput.focus();
     }
     const catInput = document.getElementById('chargeCategorySelect');
     if (catInput) catInput.value = '';
@@ -2158,6 +2501,11 @@ function selectMedicineSuggestion(medicineId) {
     }
     selectedSuggestionIndex = -1;
     activeSuggestions = [];
+
+    // Automatically focus the quantity (QTY) field of the selected medicine
+    setTimeout(() => {
+        focusCartQty(targetIdx);
+    }, 60);
 }
 
 function clearMedicineSearch() {
@@ -2183,7 +2531,7 @@ function renderCart() {
     if (cart.length === 0) {
         tbody.innerHTML = `
             <tr id="emptyCartRow">
-                <td colspan="8" class="text-center py-4 text-muted small">
+                <td colspan="9" class="text-center py-4 text-muted small">
                     No charges added yet. Search a medicine above to automatically add to this bill.
                 </td>
             </tr>
@@ -2249,7 +2597,7 @@ function renderCart() {
                         <span class="small opacity-75">(${expStatus.label})</span>
                         <span class="badge bg-white text-dark border ms-1 px-1.5 py-0.5" style="font-size: 0.68rem; font-weight: 700;">${batches.length} batches ▾</span>
                     </button>
-                    <div id="batchExpiryMenu_${idx}" class="dropdown-menu shadow-lg p-0 border-0 batch-expiry-menu d-none position-absolute" style="top: 100%; left: 0; margin-top: 4px; min-width: 320px; z-index: 1095;">
+                    <div id="batchExpiryMenu_${idx}" class="batch-expiry-menu shadow-lg p-0 border d-none" style="min-width: 320px;">
                         <div class="px-3 py-2 border-bottom bg-light d-flex justify-content-between align-items-center rounded-top-2" style="font-size: 0.74rem;">
                             <span class="fw-bold text-dark"><i class="ti ti-layers me-1 text-emerald"></i>Select Batch / Expiry</span>
                             <span class="badge bg-emerald-subtle text-emerald border" style="font-size: 0.68rem;">FEFO Earliest First</span>
@@ -2269,21 +2617,31 @@ function renderCart() {
             `;
         }
 
+        const containsRemark = item.composition || item.generic_name || '';
+
         html += `
-            <tr class="align-middle cart-row" tabindex="0" data-cart-index="${idx}">
-                <td class="text-muted fw-semibold small">${idx + 1}</td>
+            <tr class="align-middle cart-row" tabindex="0" data-cart-index="${idx}" onkeydown="onCartRowKeydown(event, ${idx})">
+                <td class="text-muted fw-semibold small text-center">${idx + 1}</td>
                 <td>
-                    <div class="fw-bold text-dark">${escapeHtml(item.medicine_name)}</div>
+                    <div class="fw-bold text-dark" style="font-size: 0.88rem;">${escapeHtml(item.medicine_name)}</div>
                     <div class="text-muted small" style="font-size: 0.71rem; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
                         <span class="badge font-monospace" style="background:#e0e7ff; color:#3730a3; font-size:0.68rem; padding: 1px 5px;"><i class="ti ti-package me-1"></i>Batch: ${escapeHtml(item.batch_number || 'GEN-01')}</span>
                         ${item.manufacturer ? '<span class="text-primary fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}Cat: ${escapeHtml(item.category)} &bull; ${escapeHtml(item.unit)} &bull; Stock: ${item.max_stock}
                     </div>
                 </td>
+                <td>
+                    ${containsRemark ? `
+                        <div class="small fw-semibold d-inline-flex align-items-center gap-1.5 px-2 py-1 rounded" style="font-size: 0.76rem; color: #047857; background-color: #ecfdf5; border: 1px solid #a7f3d0; max-width: 100%; word-break: break-word;">
+                            <i class="ti ti-flask flex-shrink-0" style="font-size: 0.85rem;"></i>
+                            <span>${escapeHtml(containsRemark)}</span>
+                        </div>
+                    ` : '<span class="text-muted small fst-italic" style="font-size: 0.75rem;">—</span>'}
+                </td>
                 <td>${expiryCellHtml}</td>
                 <td class="text-end font-monospace text-muted" style="font-size: 0.84rem;">₹${(item.purchase_price || 0).toFixed(2)}</td>
                 <td class="text-end fw-bold text-dark font-monospace" style="font-size: 0.88rem;">₹${item.price.toFixed(2)}</td>
                 <td class="text-center">
-                    <input type="number" min="1" max="${item.max_stock}" class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input" style="width: 65px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
+                    <input type="number" id="cart_qty_${idx}" min="1" max="${item.max_stock}" class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input shadow-xs" style="width: 65px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" onkeydown="onCartQtyKeydown(event, ${idx})" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
                 </td>
                 <td class="text-end fw-bold text-dark font-monospace item-line-total">₹${lineTotal.toFixed(2)}</td>
                 <td class="text-center">
@@ -2295,12 +2653,151 @@ function renderCart() {
         `;
     });
 
+    // Add inline quick helper / search indicator row at the bottom of the table
+    html += `
+        <tr class="table-keyboard-helper-row" style="background-color: #f8fafc; border-top: 1px dashed #cbd5e1;">
+            <td colspan="9" class="py-2.5 px-3">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2 small">
+                        <button type="button" class="btn btn-sm btn-outline-success py-1 px-3 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold" onclick="const mi=document.getElementById('chargeMedicineInput'); if(mi){mi.focus(); mi.select();}">
+                            <i class="bi bi-search"></i>
+                            <span>Add More Medicines</span>
+                            <kbd class="bg-white text-dark border px-1" style="font-size: 0.68rem;">Enter</kbd>
+                        </button>
+                        <span class="text-muted" style="font-size: 0.76rem;">Type medicine name &amp; press <kbd class="bg-white text-dark border px-1">Enter</kbd> to add continuously</span>
+                    </div>
+                    <div class="small text-end">
+                        <span class="badge bg-emerald-subtle text-emerald border border-emerald-subtle px-2.5 py-1.5 rounded-2 d-inline-flex align-items-center gap-1.5" style="font-size: 0.76rem; font-weight: 600;">
+                            <i class="bi bi-arrow-right-circle-fill"></i>
+                            <span>All medicines added? Press <kbd class="bg-white text-dark border px-1.5 py-0.5 rounded shadow-2xs fw-bold">Tab</kbd> to Proceed to Billing</span>
+                        </span>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `;
+
     tbody.innerHTML = html;
     recalculateCartTotalsSummary();
 }
 
+function focusCartQty(idx) {
+    if (cart.length === 0) return;
+    
+    if (idx < 0) {
+        const searchInput = document.getElementById('chargeMedicineInput');
+        if (searchInput) {
+            document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    }
+
+    if (idx >= cart.length) {
+        const proceedBtn = document.getElementById('btnProceedPreview');
+        if (proceedBtn) {
+            document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
+            proceedBtn.focus();
+        }
+        return;
+    }
+
+    const qtyInp = document.getElementById(`cart_qty_${idx}`);
+    if (qtyInp) {
+        document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
+        const row = qtyInp.closest('.cart-row');
+        if (row) row.classList.add('active-row-focus');
+        qtyInp.focus();
+        qtyInp.select();
+        qtyInp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function focusCartRow(idx) {
+    focusCartQty(idx);
+}
+
+function onCartRowKeydown(e, idx) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') {
+        return;
+    }
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        focusCartQty(idx + 1);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        focusCartQty(idx - 1);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        focusCartQty(idx);
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        if (cart.length > 0) {
+            openBillingPreviewModal();
+        } else {
+            const proceedBtn = document.getElementById('btnProceedPreview');
+            if (proceedBtn) proceedBtn.focus();
+        }
+    }
+}
+
+function onCartQtyKeydown(e, idx) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        // Return to medicine search to add next medicine
+        const searchInput = document.getElementById('chargeMedicineInput');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+            searchInput.select();
+        }
+        return;
+    } else if (e.key === 'Tab') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            if (idx > 0) {
+                focusCartQty(idx - 1);
+            } else {
+                const searchInput = document.getElementById('chargeMedicineInput');
+                if (searchInput) searchInput.focus();
+            }
+        } else {
+            if (cart.length > 0) {
+                openBillingPreviewModal();
+            } else {
+                const proceedBtn = document.getElementById('btnProceedPreview');
+                if (proceedBtn) proceedBtn.focus();
+            }
+        }
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        focusCartQty(idx - 1);
+    } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (idx < cart.length - 1) {
+            focusCartQty(idx + 1);
+        } else {
+            if (cart.length > 0) {
+                openBillingPreviewModal();
+            } else {
+                const proceedBtn = document.getElementById('btnProceedPreview');
+                if (proceedBtn) proceedBtn.focus();
+            }
+        }
+    } else if (e.key === 'Delete' || (e.key === 'Backspace' && e.ctrlKey)) {
+        e.preventDefault();
+        removeItemFromCart(idx);
+    }
+}
+
 function toggleBatchExpiryMenu(e, cartIdx) {
-    e.stopPropagation();
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
     const menu = document.getElementById(`batchExpiryMenu_${cartIdx}`);
     if (!menu) return;
     const isHidden = menu.classList.contains('d-none');
@@ -2412,12 +2909,89 @@ function saveDraft() {
         alert('Cart is empty. Add charges before saving a draft.');
         return;
     }
-    localStorage.setItem('pharmacy_opd_bill_draft', JSON.stringify({
-        patient: document.getElementById('patientSelect').value,
+    const draftData = {
+        patientId: document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '',
+        patientName: document.getElementById('cardPatientName') ? document.getElementById('cardPatientName').textContent.trim() : 'Walk-in Customer',
+        patientMobile: document.getElementById('displayPatientMobile') ? document.getElementById('displayPatientMobile').value.trim() : '',
+        patientUhid: document.getElementById('displayPatientUhid') ? document.getElementById('displayPatientUhid').value.trim() : 'OPD-DIRECT',
+        doctorName: document.getElementById('displayDoctorName') ? document.getElementById('displayDoctorName').value.trim() : '',
         cart: cart,
-        saved_at: new Date().toISOString()
-    }));
-    alert('Draft bill saved successfully in local cache!');
+        saved_at: new Date().toLocaleString()
+    };
+    localStorage.setItem('pharmacy_opd_bill_draft', JSON.stringify(draftData));
+    showAutoAddNotice('Draft bill saved successfully in local cache!', 'success');
+    checkSavedDraft();
+}
+
+function checkSavedDraft() {
+    const raw = localStorage.getItem('pharmacy_opd_bill_draft');
+    const alertEl = document.getElementById('draftRecoveryAlert');
+    const metaEl = document.getElementById('draftRecoveryMeta');
+    if (!alertEl) return;
+
+    if (raw) {
+        try {
+            const draft = JSON.parse(raw);
+            if (draft && Array.isArray(draft.cart) && draft.cart.length > 0) {
+                if (metaEl) {
+                    metaEl.textContent = `Patient: ${draft.patientName || 'Walk-in'} | Items: ${draft.cart.length} medicine(s) | Saved: ${draft.saved_at || 'Recently'}`;
+                }
+                alertEl.classList.remove('d-none');
+                alertEl.classList.add('d-flex');
+                return;
+            }
+        } catch (e) {}
+    }
+    alertEl.classList.add('d-none');
+    alertEl.classList.remove('d-flex');
+}
+
+function restoreDraft() {
+    const raw = localStorage.getItem('pharmacy_opd_bill_draft');
+    if (!raw) return;
+    try {
+        const draft = JSON.parse(raw);
+        if (draft.cart && draft.cart.length > 0) {
+            cart = draft.cart;
+            if (draft.patientId) {
+                selectCounterPatientById(draft.patientId);
+            } else if (draft.patientName) {
+                document.getElementById('hiddenCustomerName').value = draft.patientName;
+                document.getElementById('cardPatientName').textContent = draft.patientName;
+                document.getElementById('cardPatientAvatar').textContent = draft.patientName.charAt(0).toUpperCase();
+            }
+            if (draft.patientMobile) {
+                document.getElementById('displayPatientMobile').value = draft.patientMobile;
+                document.getElementById('hiddenCustomerMobile').value = draft.patientMobile;
+            }
+            if (draft.patientUhid) {
+                document.getElementById('displayPatientUhid').value = draft.patientUhid;
+            }
+            if (draft.doctorName) {
+                document.getElementById('displayDoctorName').value = draft.doctorName;
+                document.getElementById('hiddenDoctorName').value = draft.doctorName;
+            }
+            renderCart();
+            showAutoAddNotice(`Restored draft with ${cart.length} item(s)!`, 'success');
+            const alertEl = document.getElementById('draftRecoveryAlert');
+            if (alertEl) {
+                alertEl.classList.add('d-none');
+                alertEl.classList.remove('d-flex');
+            }
+        }
+    } catch (e) {
+        alert('Could not restore draft.');
+    }
+}
+
+function discardDraft() {
+    localStorage.removeItem('pharmacy_opd_bill_draft');
+    const alertEl = document.getElementById('draftRecoveryAlert');
+    if (alertEl) {
+        alertEl.classList.add('d-none');
+        alertEl.classList.remove('d-flex');
+    }
+    showAutoAddNotice('Draft discarded', 'warning');
 }
 
 function openBillingPreviewModal() {
@@ -2454,6 +3028,11 @@ function openBillingPreviewModal() {
                 <td class="text-center text-muted fw-semibold py-2.5 px-3" style="font-size: 0.82rem;">${idx + 1}</td>
                 <td class="text-start py-2.5 px-3">
                     <div class="fw-bold text-dark" style="font-size: 0.88rem;">${escapeHtml(item.medicine_name)}</div>
+                    ${item.composition || item.generic_name ? `
+                        <div class="small mt-0.5" style="font-size: 0.70rem; color: #047857;">
+                            <i class="ti ti-flask me-0.5"></i><span class="fw-semibold">Contains:</span> ${escapeHtml(item.composition || item.generic_name)}
+                        </div>
+                    ` : ''}
                     <div class="text-muted small mt-0.5" style="font-size: 0.72rem;">
                         ${item.manufacturer ? '<span class="text-emerald fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}
                         <span>${escapeHtml(item.category || 'General')}</span> &bull; 
@@ -2480,6 +3059,102 @@ function openBillingPreviewModal() {
 
     const previewModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('billingPreviewModal'));
     previewModal.show();
+
+    // Automatically focus the Settlement Mode when modal opens
+    setTimeout(() => {
+        const modeSelect = document.getElementById('modalPaymentMode');
+        if (modeSelect) {
+            modeSelect.focus();
+        }
+    }, 350);
+}
+
+function handleModalModeKeydown(e) {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        const mode = document.getElementById('modalPaymentMode').value;
+        const refGroup = document.getElementById('modalRefGroup');
+        if (refGroup && !refGroup.classList.contains('d-none')) {
+            const refInp = document.getElementById('modalPaymentRef');
+            if (refInp) { refInp.focus(); refInp.select(); }
+        } else {
+            const discInp = document.getElementById('modalDiscountValue');
+            if (discInp) { discInp.focus(); discInp.select(); }
+        }
+    }
+}
+
+function handleModalRefKeydown(e) {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        const discInp = document.getElementById('modalDiscountValue');
+        if (discInp) { discInp.focus(); discInp.select(); }
+    }
+}
+
+function handleModalDiscountKeydown(e) {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        const paidInp = document.getElementById('modalPaidInput');
+        if (paidInp) { paidInp.focus(); paidInp.select(); }
+    } else if (e.key === 'ArrowLeft' && e.altKey) {
+        e.preventDefault();
+        setDiscountMode('PERCENT');
+    } else if (e.key === 'ArrowRight' && e.altKey) {
+        e.preventDefault();
+        setDiscountMode('FLAT');
+    }
+}
+
+function handleModalPaidKeydown(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        submitFinalSale();
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        const confirmBtn = document.getElementById('modalBtnConfirmSale');
+        if (confirmBtn) confirmBtn.focus();
+    }
+}
+
+function setDiscountMode(mode) {
+    const hiddenType = document.getElementById('modalDiscountType');
+    if (hiddenType) hiddenType.value = mode;
+
+    const btnPercent = document.getElementById('btnDiscPercent');
+    const btnFlat = document.getElementById('btnDiscFlat');
+    const dInput = document.getElementById('modalDiscountValue');
+    const dAddon = document.getElementById('modalDiscountAddon');
+
+    if (mode === 'FLAT') {
+        if (btnFlat) btnFlat.classList.add('active');
+        if (btnPercent) btnPercent.classList.remove('active');
+        if (dAddon) dAddon.textContent = '₹';
+        if (dInput) {
+            dInput.step = '1';
+            dInput.removeAttribute('max');
+            dInput.placeholder = '0';
+        }
+    } else {
+        if (btnPercent) btnPercent.classList.add('active');
+        if (btnFlat) btnFlat.classList.remove('active');
+        if (dAddon) dAddon.textContent = '%';
+        if (dInput) {
+            dInput.step = '1';
+            dInput.max = '50';
+            dInput.placeholder = '0';
+        }
+    }
+    recalcModalTotals();
+    if (dInput) {
+        dInput.focus();
+        dInput.select();
+    }
+}
+
+function onDiscountTypeChange() {
+    const dType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    setDiscountMode(dType);
 }
 
 function recalcModalTotals() {
@@ -2491,9 +3166,21 @@ function recalcModalTotals() {
         totalGst += itemTotal * ((item.gst_percent || 0) / 100);
     });
 
-    const discPercent = Math.min(50, Math.max(0, parseFloat(document.getElementById('modalDiscountPercent').value) || 0));
-    const discountAmt = subtotal * (discPercent / 100);
-    const taxable = subtotal - discountAmt;
+    const discType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const rawVal = Math.max(0, parseInt(document.getElementById('modalDiscountValue')?.value, 10) || 0);
+    
+    let discountAmt = 0;
+    let effectivePercent = 0;
+
+    if (discType === 'FLAT') {
+        discountAmt = Math.min(subtotal, rawVal);
+        effectivePercent = subtotal > 0 ? (discountAmt / subtotal) * 100 : 0;
+    } else {
+        effectivePercent = Math.min(50, rawVal);
+        discountAmt = subtotal * (effectivePercent / 100);
+    }
+
+    const taxable = Math.max(0, subtotal - discountAmt);
     const grandTotal = Math.round((taxable + totalGst) * 100) / 100;
 
     document.getElementById('modalLblSubtotal').textContent = `₹${subtotal.toFixed(2)}`;
@@ -2502,7 +3189,7 @@ function recalcModalTotals() {
         if (discountAmt > 0) {
             discRow.classList.remove('d-none');
             discRow.classList.add('d-flex');
-            document.getElementById('modalLblDiscountAmt').textContent = `-₹${discountAmt.toFixed(2)}`;
+            document.getElementById('modalLblDiscountAmt').textContent = `-₹${discountAmt.toFixed(2)}` + (discType === 'FLAT' ? ` (${effectivePercent.toFixed(1)}%)` : '');
         } else {
             discRow.classList.add('d-none');
             discRow.classList.remove('d-flex');
@@ -2558,8 +3245,10 @@ function previewCurrentBill(format = 'standard') {
     const patientAddress = 'KHARADI, PUNE';
     const doctorName = document.getElementById('modalDoctorInput').value.trim() || 'DR. VAISHALI LONDHE';
     const subtotal = parseFloat(document.getElementById('modalLblSubtotal').textContent.replace('₹', '')) || 0;
-    const discountPercent = parseFloat(document.getElementById('modalDiscountPercent').value) || 0.0;
-    const discountAmt = parseFloat(document.getElementById('modalLblDiscountAmt')?.textContent.replace('-₹', '').replace('₹', '') || '0') || 0;
+    const discType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const discVal = parseFloat(document.getElementById('modalDiscountValue')?.value) || 0.0;
+    const discountPercent = discType === 'FLAT' ? (subtotal > 0 ? (discVal / subtotal) * 100 : 0) : discVal;
+    const discountAmt = discType === 'FLAT' ? Math.min(subtotal, discVal) : (subtotal * (discountPercent / 100));
     const gstAmt = parseFloat(document.getElementById('modalLblGst').textContent.replace('₹', '')) || 0;
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
     const billDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
@@ -2725,32 +3414,79 @@ function previewCurrentBill(format = 'standard') {
 
 // 8. Final Submit Sale
 function submitFinalSale() {
+    if (!cart || cart.length === 0) {
+        alert('Your cart is empty. Please select at least one medicine.');
+        return;
+    }
+
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
     const paidAmount = parseFloat(document.getElementById('modalPaidInput').value) || grandTotal;
-    const discountPercent = parseFloat(document.getElementById('modalDiscountPercent').value) || 0.0;
+    const discountType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
+    const discountVal = parseFloat(document.getElementById('modalDiscountValue')?.value) || 0.0;
+    const subtotal = parseFloat(document.getElementById('modalLblSubtotal').textContent.replace('₹', '')) || 0.0;
+    let discountPercent = 0.0;
+
+    if (discountType === 'FLAT') {
+        discountPercent = subtotal > 0 ? Math.min(50.0, (discountVal / subtotal) * 100.0) : 0.0;
+    } else {
+        discountPercent = Math.min(50.0, discountVal);
+    }
+
     const paymentMode = document.getElementById('modalPaymentMode').value;
     const paymentRef = document.getElementById('modalPaymentRef').value.trim();
     const doctor = document.getElementById('modalDoctorInput').value.trim();
     const notes = document.getElementById('modalNotesInput').value.trim();
+    const customerName = document.getElementById('modalPatientName').textContent.trim() || 'Walk-in Customer';
+    const customerMobile = document.getElementById('modalPatientMobile').textContent.trim() === '-' ? '' : document.getElementById('modalPatientMobile').textContent.trim();
+    const patientId = document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '';
 
+    // Populate all hidden form inputs
+    document.getElementById('cartItemsJson').value = JSON.stringify(cart);
+    document.getElementById('hiddenPatientId').value = patientId;
+    document.getElementById('hiddenCustomerName').value = customerName;
+    document.getElementById('hiddenCustomerMobile').value = customerMobile;
     document.getElementById('hiddenPaidAmount').value = paidAmount;
-    document.getElementById('hiddenDiscountPercent').value = discountPercent;
-    document.getElementById('hiddenDiscountValue').value = discountPercent;
+    document.getElementById('hiddenDiscountType').value = discountType;
+    document.getElementById('hiddenDiscountValue').value = discountVal;
+    document.getElementById('hiddenDiscountPercent').value = discountPercent.toFixed(4);
     document.getElementById('hiddenPaymentMode').value = paymentMode;
     document.getElementById('hiddenPaymentRef').value = paymentRef;
     document.getElementById('hiddenDoctorName').value = doctor;
     document.getElementById('hiddenNotes').value = notes;
 
+    // Clear saved draft on completed sale
+    localStorage.removeItem('pharmacy_opd_bill_draft');
+
     const btn = document.getElementById('modalBtnConfirmSale');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Generating Bill...';
 
-    document.getElementById('posSaleForm').submit();
+    HTMLFormElement.prototype.submit.call(document.getElementById('posSaleForm'));
 }
+
+// Global Keyboard Shortcuts (F8 -> Billing Preview, F9 -> Confirm Sale)
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'F8') {
+        e.preventDefault();
+        if (cart.length > 0) {
+            openBillingPreviewModal();
+        }
+    } else if (e.key === 'F9') {
+        e.preventDefault();
+        const modalEl = document.getElementById('billingPreviewModal');
+        const isOpen = modalEl && modalEl.classList.contains('show');
+        if (isOpen) {
+            submitFinalSale();
+        } else if (cart.length > 0) {
+            openBillingPreviewModal();
+        }
+    }
+});
 
 // Initialize on page load: trigger Category change to load initial medicines
 document.addEventListener('DOMContentLoaded', function() {
     onCategorySelectChange('');
+    checkSavedDraft();
 
     // Ensure patient suggestion dropdown disappears whenever New Patient modal opens or closes
     const newOpdModalEl = document.getElementById('newOpdPatientModal');
@@ -2788,25 +3524,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Global keyboard shortcuts: F4 for Patient search, F2 for Medicine search
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'F4') {
-            e.preventDefault();
-            const pInput = document.getElementById('counterPatientSearchInput');
-            if (pInput) {
-                pInput.focus();
-                pInput.select();
-                onCounterPatientSearchFocus();
-            }
-        } else if (e.key === 'F2') {
-            e.preventDefault();
-            const mInput = document.getElementById('chargeMedicineInput');
-            if (mInput) {
-                mInput.focus();
-                mInput.select();
-            }
+    // Start with focus directly on Patient search input for seamless keyboard workflow
+    setTimeout(function() {
+        const pInput = document.getElementById('counterPatientSearchInput');
+        if (pInput) {
+            pInput.focus();
+            pInput.select();
         }
-    });
+    }, 150);
 });
 </script>
 
