@@ -559,6 +559,194 @@ class SalesService
     }
 
     /**
+     * Record and complete an overpayment refund against a sales invoice.
+     *
+     * Used when an invoice total is reduced below the amount already paid by the customer
+     * (e.g. ₹200 bill -> paid ₹150 -> edited bill ₹100 -> excess ₹50).
+     *
+     * Rules:
+     * - Locks the sale row FOR UPDATE to prevent race conditions and duplicate refunds.
+     * - Validates status !== 'CANCELLED'.
+     * - Calculates excess = paid_amount - grand_total.
+     * - Validates excess > 0.00 and refund_amount <= excess.
+     * - Inserts a compensating refund voucher (-refund_amount) into pharmacy_sale_payments.
+     *   This preserves the original historical receipt voucher (+₹150) while balancing the ledger.
+     * - Updates pharmacy_sales: paid_amount = grand_total, notes updated to [OVERPAYMENT_REFUND_COMPLETED: ...]
+     * - Logs audit trail with previous and new values, voucher #, mode, and reference.
+     * - Entire operation is atomic; rolls back completely on any error.
+     * - Re-attempting will strictly fail as excess becomes 0.00 and notes show completed.
+     */
+    public function settleOverpaymentRefund(
+        int $saleId,
+        float $refundAmount,
+        string $refundMode = 'CASH',
+        ?string $refNumber = null,
+        string $notes = '',
+        ?int $userId = null
+    ): array {
+        $refundAmount = round((float)$refundAmount, 2);
+        if ($refundAmount <= 0.0) {
+            throw new \InvalidArgumentException("Refund amount must be greater than zero.");
+        }
+
+        $allowedRefundModes = ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER', 'CHEQUE'];
+        $cleanMode = strtoupper(trim($refundMode));
+        if ($cleanMode === 'CREDIT') {
+            throw new \InvalidArgumentException("Customer credit cannot be issued as a cash refund. Accepted refund disbursement modes are: " . implode(', ', $allowedRefundModes) . ".");
+        }
+        if (!in_array($cleanMode, $allowedRefundModes, true)) {
+            throw new \InvalidArgumentException("Invalid refund payment mode '{$refundMode}'. Accepted modes: " . implode(', ', $allowedRefundModes) . ".");
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $saleStmt = $this->pdo->prepare("
+                SELECT sale_id, sale_number, grand_total, paid_amount, balance_amount, status, notes
+                FROM pharmacy_sales
+                WHERE sale_id = ?
+                FOR UPDATE
+            ");
+            $saleStmt->execute([$saleId]);
+            $sale = $saleStmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$sale) {
+                throw new \Exception("Sale #{$saleId} not found.");
+            }
+            if ($sale['status'] === 'CANCELLED') {
+                throw new \Exception("Cannot process an overpayment refund on a cancelled sale invoice.");
+            }
+
+            $currentExcess = max(0.00, round((float)$sale['paid_amount'] - (float)$sale['grand_total'], 2));
+            if ($currentExcess <= 0.00) {
+                throw new \Exception("No outstanding overpayment exists for Sale #{$sale['sale_number']} (Paid ₹" . number_format((float)$sale['paid_amount'], 2) . ", Total ₹" . number_format((float)$sale['grand_total'], 2) . ").");
+            }
+
+            if ($refundAmount > $currentExcess) {
+                throw new \InvalidArgumentException("Refund amount (₹" . number_format($refundAmount, 2) . ") exceeds outstanding excess (₹" . number_format($currentExcess, 2) . ").");
+            }
+
+            // Generate refund voucher sequence number (e.g. RFD-000001)
+            $refundVoucher = $this->seqService->getNextNumber('SALE_REFUND');
+
+            // Insert negative compensating refund entry into pharmacy_sale_payments
+            // Preserves historical receipt vouchers (+₹150.00) while balancing net receipts (+₹100.00)
+            $refundVoucherAmount = -1.0 * $refundAmount;
+            $payNotes = !empty($notes) ? $notes : "Overpayment refund settlement for invoice edit: Excess ₹" . number_format($refundAmount, 2);
+
+            $insPay = $this->pdo->prepare("
+                INSERT INTO pharmacy_sale_payments (
+                    payment_number, sale_id, payment_date, amount, payment_mode,
+                    reference_number, notes, created_by, created_at
+                ) VALUES (
+                    ?, ?, CURDATE(), ?, ?,
+                    ?, ?, ?, NOW()
+                )
+            ");
+            $insPay->execute([
+                $refundVoucher,
+                $saleId,
+                $refundVoucherAmount,
+                $cleanMode,
+                $refNumber !== '' ? $refNumber : null,
+                $payNotes,
+                $userId
+            ]);
+
+            $newPaid = max(0.00, round((float)$sale['paid_amount'] - $refundAmount, 2));
+            $newBalance = max(0.00, round((float)$sale['grand_total'] - $newPaid, 2));
+            $newStatus = ($newBalance <= 0.01) ? 'PAID' : (($newPaid > 0) ? 'PARTIALLY_PAID' : 'UNPAID');
+
+            $remainingExcess = max(0.00, round($newPaid - (float)$sale['grand_total'], 2));
+
+            $origNotes = $sale['notes'] ?? '';
+            if ($remainingExcess > 0.00) {
+                // Partial refund: excess still remains due
+                $partialRefundTag = "[OVERPAYMENT_REFUND_DUE: ₹" . number_format($remainingExcess, 2) . " (Partial refund ₹" . number_format($refundAmount, 2) . " paid via {$cleanMode} on " . date('Y-m-d') . ", Voucher: {$refundVoucher}" . ($refNumber ? ", Ref: {$refNumber}" : "") . ")]";
+                if (strpos($origNotes, 'OVERPAYMENT_REFUND_DUE') !== false) {
+                    $newNotes = preg_replace('/\[OVERPAYMENT_REFUND_DUE:[^\]]*\]/', $partialRefundTag, $origNotes);
+                } else {
+                    $newNotes = trim($origNotes . ' ' . $partialRefundTag);
+                }
+            } else {
+                // Complete refund: all excess settled
+                $refundTag = "[OVERPAYMENT_REFUND_COMPLETED: ₹" . number_format($refundAmount, 2) . " via {$cleanMode} on " . date('Y-m-d') . " (Voucher: {$refundVoucher}" . ($refNumber ? ", Ref: {$refNumber}" : "") . ")]";
+                if (strpos($origNotes, 'OVERPAYMENT_REFUND_DUE') !== false) {
+                    $newNotes = preg_replace('/\[OVERPAYMENT_REFUND_DUE:[^\]]*\]/', $refundTag, $origNotes);
+                } else {
+                    $newNotes = trim($origNotes . ' ' . $refundTag);
+                }
+            }
+
+            $updSale = $this->pdo->prepare("
+                UPDATE pharmacy_sales
+                SET paid_amount = ?, balance_amount = ?, payment_status = ?, notes = ?, updated_at = NOW()
+                WHERE sale_id = ?
+            ");
+            $updSale->execute([$newPaid, $newBalance, $newStatus, $newNotes, $saleId]);
+
+            $this->auditService->logAction(
+                $userId,
+                'SETTLE_OVERPAYMENT_REFUND',
+                'pharmacy_sale_payments',
+                (string)$saleId,
+                [
+                    'paid_amount'      => (float)$sale['paid_amount'],
+                    'grand_total'      => (float)$sale['grand_total'],
+                    'excess_amount'    => $currentExcess,
+                ],
+                [
+                    'refund_amount'    => $refundAmount,
+                    'remaining_excess' => $remainingExcess,
+                    'voucher_number'   => $refundVoucher,
+                    'payment_mode'     => $cleanMode,
+                    'reference'        => $refNumber,
+                    'new_paid'         => $newPaid,
+                    'balance'          => $newBalance,
+                    'payment_status'   => $newStatus,
+                ]
+            );
+
+            $this->pdo->commit();
+            return [
+                'success'          => true,
+                'sale_id'          => $saleId,
+                'refund_voucher'   => $refundVoucher,
+                'refund_amount'    => $refundAmount,
+                'remaining_excess' => $remainingExcess,
+                'new_paid'         => $newPaid,
+                'sale'             => $this->getSale($saleId)
+            ];
+
+        } catch (\Exception $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Fetch all sales with outstanding overpayments awaiting refund.
+     */
+    public function getOutstandingOverpayments(int $limit = 50): array
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT s.*, 
+                   GREATEST(0.00, ROUND(s.paid_amount - s.grand_total, 2)) AS excess_amount,
+                   u.full_name as cashier_name
+            FROM pharmacy_sales s
+            LEFT JOIN pharmacy_users u ON s.created_by = u.id
+            WHERE s.status != 'CANCELLED' 
+              AND s.paid_amount > s.grand_total
+            ORDER BY s.sale_id DESC
+            LIMIT ?
+        ");
+        $stmt->bindValue(1, $limit, \PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Cancel a posted sale transaction.
      * Generates compensating stock inward movements into medicine_batches and StockLedger ('SALE_RETURN').
      * Historical transactions are NEVER deleted.
@@ -809,8 +997,16 @@ class SalesService
         }
 
         if (!empty($filters['payment_status'])) {
-            $where[] = "s.payment_status = ?";
-            $params[] = $filters['payment_status'];
+            if ($filters['payment_status'] === 'OVERPAID' || $filters['payment_status'] === 'OVERPAYMENT_DUE') {
+                $where[] = "(s.paid_amount > s.grand_total AND s.status != 'CANCELLED')";
+            } else {
+                $where[] = "s.payment_status = ?";
+                $params[] = $filters['payment_status'];
+            }
+        }
+
+        if (!empty($filters['overpayment_due'])) {
+            $where[] = "(s.paid_amount > s.grand_total AND s.status != 'CANCELLED')";
         }
 
         if (!empty($filters['status'])) {
@@ -904,4 +1100,150 @@ class SalesService
         ");
         $updRx->execute([$newRxStatus, $prescriptionId]);
     }
+
+    /**
+     * Archive an edited bill snapshot into pharmacy_bill_edit_history with 30-day retention.
+     */
+    public function recordBillEditHistory(int $oldSaleId, int $newSaleId, string $editReason = 'Medicines modified in POS', ?int $userId = null): int
+    {
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM pharmacy_sales WHERE sale_id = ?");
+            $stmt->execute([$oldSaleId]);
+            $oldSale = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$oldSale) return 0;
+
+            $stmtNew = $this->pdo->prepare("SELECT sale_number FROM pharmacy_sales WHERE sale_id = ?");
+            $stmtNew->execute([$newSaleId]);
+            $newSaleNumber = $stmtNew->fetchColumn() ?: null;
+
+            // Fetch old sale items snapshot
+            $stmtItems = $this->pdo->prepare("
+                SELECT si.sale_item_id, si.medicine_id, m.medicine_name, m.generic_name, m.composition,
+                       si.dosage_form, si.pack_size, si.quantity, si.unit_price, si.mrp,
+                       si.discount_percent, si.discount_amount, si.taxable_amount,
+                       si.gst_percent, si.gst_amount, si.line_total,
+                       COALESCE((SELECT batch_number FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 'GEN-01') as batch_number,
+                       COALESCE((SELECT expiry_date FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), '') as expiry_date
+                FROM pharmacy_sale_items si
+                JOIN medicines m ON si.medicine_id = m.medicine_id
+                WHERE si.sale_id = ?
+            ");
+            $stmtItems->execute([$oldSaleId]);
+            $itemsSnapshot = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+
+            // Determine root original sale number
+            $rootSaleNumber = $oldSale['sale_number'];
+            if (preg_match('/\[EDITED:\s*Replaced Bill #([^\]]+)\]/i', $oldSale['notes'] ?? '', $m)) {
+                $rootSaleNumber = trim($m[1]);
+            }
+
+            // Calculate version number
+            $vStmt = $this->pdo->prepare("SELECT COUNT(*) FROM pharmacy_bill_edit_history WHERE original_sale_number = ?");
+            $vStmt->execute([$rootSaleNumber]);
+            $existingCount = (int)$vStmt->fetchColumn();
+            $versionNumber = $existingCount + 1;
+
+            // Fetch editor user name
+            $userName = 'System / Cashier';
+            if ($userId) {
+                $uStmt = $this->pdo->prepare("SELECT name FROM pharmacy_users WHERE user_id = ?");
+                $uStmt->execute([$userId]);
+                $userName = $uStmt->fetchColumn() ?: 'Staff #' . $userId;
+            }
+
+            $ins = $this->pdo->prepare("
+                INSERT INTO pharmacy_bill_edit_history (
+                    original_sale_id, original_sale_number, new_sale_id, new_sale_number,
+                    version_number, patient_id, customer_name, customer_mobile, doctor_name,
+                    subtotal_amount, discount_amount, gst_amount, grand_total, paid_amount,
+                    payment_mode, notes, items_snapshot, edited_by, edited_by_name,
+                    edit_reason, created_at, retention_until
+                ) VALUES (
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, NOW(), DATE_ADD(NOW(), INTERVAL 30 DAY)
+                )
+            ");
+
+            $ins->execute([
+                $oldSaleId,
+                $rootSaleNumber,
+                $newSaleId,
+                $newSaleNumber,
+                $versionNumber,
+                $oldSale['patient_id'],
+                $oldSale['customer_name'],
+                $oldSale['customer_mobile'],
+                $oldSale['doctor_name'],
+                $oldSale['subtotal_amount'],
+                $oldSale['discount_amount'],
+                $oldSale['gst_amount'],
+                $oldSale['grand_total'],
+                $oldSale['paid_amount'],
+                $oldSale['payment_mode'],
+                $oldSale['notes'],
+                json_encode($itemsSnapshot, JSON_UNESCAPED_UNICODE),
+                $userId,
+                $userName,
+                $editReason
+            ]);
+
+            return (int)$this->pdo->lastInsertId();
+        } catch (Exception $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Get complete 30-day bill edit history versions for a given sale.
+     */
+    public function getBillEditHistory(int $saleId): array
+    {
+        try {
+            $stmt = $this->pdo->prepare("SELECT sale_number, notes FROM pharmacy_sales WHERE sale_id = ?");
+            $stmt->execute([$saleId]);
+            $currSale = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$currSale) return [];
+
+            $rootSaleNumber = $currSale['sale_number'];
+            if (preg_match('/\[EDITED:\s*Replaced Bill #([^\]]+)\]/i', $currSale['notes'] ?? '', $m)) {
+                $rootSaleNumber = trim($m[1]);
+            }
+
+            $hStmt = $this->pdo->prepare("
+                SELECT *,
+                       DATEDIFF(retention_until, NOW()) as days_remaining
+                FROM pharmacy_bill_edit_history
+                WHERE (original_sale_number = ? OR original_sale_id = ? OR new_sale_id = ?)
+                  AND retention_until >= NOW()
+                ORDER BY version_number ASC, id ASC
+            ");
+            $hStmt->execute([$rootSaleNumber, $saleId, $saleId]);
+            $histories = $hStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            foreach ($histories as &$h) {
+                $h['items'] = json_decode($h['items_snapshot'] ?? '[]', true) ?: [];
+            }
+            return $histories;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Purge historical bill edit snapshots older than the retention threshold.
+     */
+    public function purgeExpiredEditHistories(int $retentionDays = 30): int
+    {
+        try {
+            $stmt = $this->pdo->prepare("DELETE FROM pharmacy_bill_edit_history WHERE retention_until < NOW()");
+            $stmt->execute();
+            return $stmt->rowCount();
+        } catch (Exception $e) {
+            return 0;
+        }
+    }
 }
+

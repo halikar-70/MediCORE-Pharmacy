@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $items = [];
                 $medIds = $_POST['item_medicine_id'] ?? [];
                 $quantities = $_POST['item_qty'] ?? [];
+                $schemes = $_POST['item_free_qty'] ?? $_POST['item_scheme'] ?? [];
                 $rates = $_POST['item_rate'] ?? [];
                 $discounts = $_POST['item_discount'] ?? [];
                 $gsts = $_POST['item_gst'] ?? [];
@@ -62,12 +63,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($medIds as $k => $mId) {
                     $mId = (int)$mId;
                     $qty = (int)($quantities[$k] ?? 0);
-                    if ($mId > 0 && $qty > 0) {
+                    $freeQty = (int)($schemes[$k] ?? 0);
+                    if ($mId > 0 && ($qty > 0 || $freeQty > 0)) {
                         $items[] = [
                             'medicine_id'         => $mId,
                             'pack_size'           => $packs[$k] ?? '1',
                             'requested_qty'       => $qty,
-                            'free_qty'            => 0,
+                            'free_qty'            => max(0, $freeQty),
                             'purchase_rate'       => (float)($rates[$k] ?? 0.00),
                             'discount_percent'    => (float)($discounts[$k] ?? 0.00),
                             'gst_percent'         => (float)($gsts[$k] ?? 0.00),
@@ -99,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $items = [];
                 $medIds = $_POST['item_medicine_id'] ?? [];
                 $quantities = $_POST['item_qty'] ?? [];
+                $schemes = $_POST['item_free_qty'] ?? $_POST['item_scheme'] ?? [];
                 $rates = $_POST['item_rate'] ?? [];
                 $discounts = $_POST['item_discount'] ?? [];
                 $gsts = $_POST['item_gst'] ?? [];
@@ -108,12 +111,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($medIds as $k => $mId) {
                     $mId = (int)$mId;
                     $qty = (int)($quantities[$k] ?? 0);
-                    if ($mId > 0 && $qty > 0) {
+                    $freeQty = (int)($schemes[$k] ?? 0);
+                    if ($mId > 0 && ($qty > 0 || $freeQty > 0)) {
                         $items[] = [
                             'medicine_id'         => $mId,
                             'pack_size'           => $packs[$k] ?? '1',
                             'requested_qty'       => $qty,
-                            'free_qty'            => 0,
+                            'free_qty'            => max(0, $freeQty),
                             'purchase_rate'       => (float)($rates[$k] ?? 0.00),
                             'discount_percent'    => (float)($discounts[$k] ?? 0.00),
                             'gst_percent'         => (float)($gsts[$k] ?? 0.00),
@@ -161,7 +165,9 @@ if ($search !== '') $filters['search'] = $search;
 $orders = $poService->listPurchaseOrders($filters);
 $activeSuppliers = $pdo->query("SELECT supplier_id, supplier_name, supplier_code, payment_terms FROM pharmacy_suppliers WHERE status = 'Active' ORDER BY supplier_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 $medicinesCatalog = $pdo->query("
-    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.dosage_form, m.strength, m.pack_size, m.gst_percent, m.purchase_price, m.price as mrp,
+    SELECT m.medicine_id, m.medicine_name, m.generic_name, m.dosage_form, m.strength, m.pack_size, m.gst_percent,
+           COALESCE(NULLIF(m.purchase_price, 0), (SELECT mb.purchase_price FROM medicine_batches mb WHERE mb.medicine_id = m.medicine_id AND mb.purchase_price > 0 ORDER BY mb.batch_id DESC LIMIT 1), 0.00) as purchase_price,
+           COALESCE(NULLIF(m.price, 0), (SELECT mb.mrp FROM medicine_batches mb WHERE mb.medicine_id = m.medicine_id AND mb.mrp > 0 ORDER BY mb.batch_id DESC LIMIT 1), NULLIF(m.purchase_price, 0), 0.00) as mrp,
            COALESCE((
                SELECT SUM(mb.quantity_available)
                FROM medicine_batches mb
@@ -185,10 +191,10 @@ if (!empty($_GET['view_id'])) {
 $editPo = null;
 if (!empty($_GET['edit_id']) && $canEdit) {
     $candPo = $poService->getPurchaseOrder((int)$_GET['edit_id']);
-    if ($candPo && in_array($candPo['status'], ['DRAFT', 'SUBMITTED', 'APPROVED'], true) && (int)($candPo['total_received_units'] ?? 0) === 0) {
+    if ($candPo) {
         $editPo = $candPo;
     } else {
-        $error = "This purchase order cannot be edited (it may be cancelled, closed, or already received).";
+        $error = "The requested purchase order could not be found.";
     }
 }
 
@@ -217,6 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $updItem = $pdo->prepare("
             UPDATE pharmacy_purchase_order_items SET
                 requested_qty = ?,
+                free_qty = ?,
                 purchase_rate = ?,
                 discount_percent = ?,
                 gst_percent = ?,
@@ -227,6 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         foreach ($items as $it) {
             $itemId = (int)($it['po_item_id'] ?? 0);
             $qty = (int)($it['requested_qty'] ?? 1);
+            $freeQty = (int)($it['free_qty'] ?? 0);
             $rate = (float)($it['purchase_rate'] ?? 0.0);
             $discPct = (float)($it['discount_percent'] ?? 0.0);
             $gstPct = (float)($it['gst_percent'] ?? 0.0);
@@ -241,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $calcTotal += $lineTot;
 
             if ($itemId > 0) {
-                $updItem->execute([$qty, $rate, $discPct, $gstPct, $lineTot, $itemId, $pId]);
+                $updItem->execute([$qty, $freeQty, $rate, $discPct, $gstPct, $lineTot, $itemId, $pId]);
             }
         }
 
@@ -694,42 +702,17 @@ if ($isPrint) {
                     <i class="bi bi-printer"></i> Print Purchase Order
                 </button>
 
-                <!-- Edit Details Toggle Button -->
-                <button type="button" id="btnEditToggle" class="btn btn-warning" onclick="toggleEditMode()" title="Enable editing details on this purchase order">
-                    <i class="bi bi-pencil-square"></i> Edit Details
-                </button>
-
-                <!-- Save Changes Button (Visible when editing) -->
-                <button type="button" id="btnSaveEdits" class="btn btn-success d-none" onclick="savePoEditsToServer()" title="Save modified details to database">
-                    <i class="bi bi-check-circle-fill"></i> Save Changes
-                </button>
-
-                <!-- Cancel Button (Visible when editing) -->
-                <button type="button" id="btnCancelEdit" class="btn btn-secondary d-none" onclick="cancelEditMode()" title="Cancel editing">
-                    <i class="bi bi-arrow-counterclockwise"></i> Cancel
-                </button>
+                <?php if ($canEdit): ?>
+                    <a href="orders.php?edit_id=<?= $viewPo['po_id'] ?>" class="btn btn-warning" title="Edit this purchase order in application form">
+                        <i class="bi bi-pencil-square"></i> Edit Order
+                    </a>
+                <?php endif; ?>
 
                 <a href="orders.php" class="btn btn-secondary" title="Return to Orders list">
                     <i class="bi bi-arrow-left"></i> Back to Orders
                 </a>
                 <button type="button" class="btn btn-secondary" onclick="window.close()" title="Close this window">
                     <i class="bi bi-x-lg"></i> Close
-                </button>
-            </div>
-        </div>
-
-        <!-- Edit Mode Active Notification Banner (Hidden by default) -->
-        <div id="editNoticeBanner" class="d-none">
-            <div>
-                <i class="bi bi-info-circle-fill me-1"></i>
-                <strong>Edit Mode Active:</strong> Click delivery date, payment terms, requested quantities, rates, discounts, or GST % to edit. Totals recalculate live.
-            </div>
-            <div style="display: flex; gap: 6px;">
-                <button type="button" class="btn btn-success btn-sm" onclick="savePoEditsToServer()" style="height: 26px; padding: 0 10px; font-size: 11px;">
-                    <i class="bi bi-check-circle-fill"></i> Save to Database
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="cancelEditMode()" style="height: 26px; padding: 0 10px; font-size: 11px;">
-                    <i class="bi bi-arrow-counterclockwise"></i> Cancel
                 </button>
             </div>
         </div>
@@ -803,14 +786,14 @@ if ($isPrint) {
                 <table class="po-table" id="poItemsTable">
                     <colgroup>
                         <col style="width: 4%;">   <!-- # -->
-                        <col style="width: 36%;">  <!-- Medicine Description -->
-                        <col style="width: 10%;">  <!-- Pack -->
+                        <col style="width: 34%;">  <!-- Medicine Description -->
+                        <col style="width: 8%;">   <!-- Pack -->
                         <col style="width: 8%;">   <!-- Req Qty -->
-                        <col style="width: 11%;">  <!-- Rate (₹) -->
+                        <col style="width: 8%;">   <!-- Scheme -->
+                        <col style="width: 11%;">  <!-- MRP (₹) -->
                         <col style="width: 7%;">   <!-- Disc % -->
                         <col style="width: 8%;">   <!-- GST % -->
                         <col style="width: 12%;">  <!-- Amount (₹) -->
-                        <col class="edit-ui-control" style="width: 4%;"> <!-- Actions -->
                     </colgroup>
                     <thead>
                         <tr>
@@ -818,15 +801,16 @@ if ($isPrint) {
                             <th class="text-left" style="padding-left: 6px;">Medicine Description</th>
                             <th>Pack</th>
                             <th class="text-center">Req Qty</th>
-                            <th class="text-right" style="padding-right: 6px;">Rate (₹)</th>
+                            <th class="text-center">Scheme</th>
+                            <th class="text-right" style="padding-right: 6px;">MRP (₹)</th>
                             <th class="text-center">Disc %</th>
                             <th class="text-center">GST %</th>
                             <th class="text-right" style="padding-right: 6px;">Amount (₹)</th>
-                            <th class="edit-ui-control text-center"></th>
                         </tr>
                     </thead>
                     <tbody id="poItemsBody">
                         <?php foreach ($viewPo['items'] as $i => $item): ?>
+                            <?php $displayMrp = (!empty($item['mrp']) && (float)$item['mrp'] > 0) ? (float)$item['mrp'] : (float)$item['purchase_rate']; ?>
                             <tr class="item-row po-item-row" data-po-item-id="<?= (int)$item['po_item_id'] ?>" data-row-idx="<?= $i ?>">
                                 <td class="text-center"><?= $i + 1 ?></td>
                                 <td class="text-left" style="padding-left: 6px;">
@@ -840,22 +824,22 @@ if ($isPrint) {
                                 </td>
                                 <td class="text-center"><?= htmlspecialchars($item['pack_size']) ?></td>
                                 <td class="text-center fw-bold">
-                                    <span class="editable-field item-qty" data-field="requested_qty" oninput="onPoItemChange(<?= $i ?>)"><?= (int)$item['requested_qty'] ?></span>
+                                    <?= (int)$item['requested_qty'] ?>
+                                </td>
+                                <td class="text-center fw-bold text-success">
+                                    <?= (int)($item['free_qty'] ?? 0) ?>
                                 </td>
                                 <td class="text-right" style="padding-right: 6px;">
-                                    <span class="editable-field item-rate" data-field="purchase_rate" oninput="onPoItemChange(<?= $i ?>)"><?= number_format((float)$item['purchase_rate'], 2, '.', '') ?></span>
+                                    <?= number_format($displayMrp, 2, '.', '') ?>
                                 </td>
                                 <td class="text-center">
-                                    <span class="editable-field item-disc" data-field="discount_percent" oninput="onPoItemChange(<?= $i ?>)"><?= (float)$item['discount_percent'] ?></span>%
+                                    <?= (float)$item['discount_percent'] ?>%
                                 </td>
                                 <td class="text-center">
-                                    <span class="editable-field item-gst" data-field="gst_percent" oninput="onPoItemChange(<?= $i ?>)"><?= (float)$item['gst_percent'] ?></span>%
+                                    <?= (float)$item['gst_percent'] ?>%
                                 </td>
                                 <td class="text-right fw-bold item-line-amount" style="padding-right: 6px;">
                                     ₹<?= number_format((float)$item['line_total'], 2) ?>
-                                </td>
-                                <td class="edit-ui-control text-center">
-                                    <button type="button" class="btn-del-row" onclick="deletePoRow(<?= $i ?>)" title="Remove item"><i class="bi bi-trash"></i></button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -869,7 +853,7 @@ if ($isPrint) {
                 <div class="footer-box">
                     <div>
                         <strong>Notes / Instructions:</strong>
-                        <div class="editable-field mt-1" id="fieldNotes" data-field="notes" style="min-height: 28px; width: 100%;">
+                        <div class="mt-1" id="fieldNotes" style="min-height: 28px; width: 100%;">
                             <?= nl2br(htmlspecialchars($viewPo['notes'] ?: 'Deliver all items in verified condition with valid batch and expiry.')) ?>
                         </div>
                     </div>
@@ -911,168 +895,6 @@ if ($isPrint) {
                 </div>
             </div>
         </div>
-
-        <!-- ----------------------------------------------------------------- -->
-        <!-- JAVASCRIPT: LIVE EDITING, AUTO-CALCULATION & SERVER PERSISTENCE   -->
-        <!-- ----------------------------------------------------------------- -->
-        <script>
-            let isEditMode = false;
-            const currentPoId = <?= (int)$viewPo['po_id'] ?>;
-
-            function toggleEditMode() {
-                isEditMode = !isEditMode;
-                const container = document.getElementById('poSheetContainer');
-                const editNotice = document.getElementById('editNoticeBanner');
-                const btnToggle = document.getElementById('btnEditToggle');
-                const btnSave = document.getElementById('btnSaveEdits');
-                const btnCancel = document.getElementById('btnCancelEdit');
-
-                if (isEditMode) {
-                    container.classList.add('edit-mode-active');
-                    if (editNotice) editNotice.classList.remove('d-none');
-                    if (btnToggle) btnToggle.classList.add('d-none');
-                    if (btnSave) btnSave.classList.remove('d-none');
-                    if (btnCancel) btnCancel.classList.remove('d-none');
-
-                    document.querySelectorAll('.editable-field').forEach(el => {
-                        el.setAttribute('contenteditable', 'true');
-                    });
-                } else {
-                    container.classList.remove('edit-mode-active');
-                    if (editNotice) editNotice.classList.add('d-none');
-                    if (btnToggle) btnToggle.classList.remove('d-none');
-                    if (btnSave) btnSave.classList.add('d-none');
-                    if (btnCancel) btnCancel.classList.add('d-none');
-
-                    document.querySelectorAll('.editable-field').forEach(el => {
-                        el.setAttribute('contenteditable', 'false');
-                    });
-                }
-            }
-
-            function cancelEditMode() {
-                if (confirm('Cancel editing and restore original purchase order details?')) {
-                    window.location.reload();
-                }
-            }
-
-            function onPoItemChange(rowIdx) {
-                const row = document.querySelector(`.po-item-row[data-row-idx="${rowIdx}"]`);
-                if (!row) return;
-
-                const qty = parseFloat(row.querySelector('.item-qty')?.innerText || 1) || 0;
-                const rate = parseFloat(row.querySelector('.item-rate')?.innerText || 0) || 0;
-                const discPct = parseFloat(row.querySelector('.item-disc')?.innerText || 0) || 0;
-                const gstPct = parseFloat(row.querySelector('.item-gst')?.innerText || 0) || 0;
-
-                const discAmt = (qty * rate) * (discPct / 100);
-                const taxable = (qty * rate) - discAmt;
-                const taxAmt = taxable * (gstPct / 100);
-                const lineTotal = taxable + taxAmt;
-
-                if (row.querySelector('.item-line-amount')) {
-                    row.querySelector('.item-line-amount').innerText = `₹${lineTotal.toFixed(2)}`;
-                }
-
-                recalculatePoTotals();
-            }
-
-            function recalculatePoTotals() {
-                let subtotal = 0.0;
-                let taxTotal = 0.0;
-                let grandTotal = 0.0;
-
-                document.querySelectorAll('.po-item-row').forEach(row => {
-                    const qty = parseFloat(row.querySelector('.item-qty')?.innerText || 0) || 0;
-                    const rate = parseFloat(row.querySelector('.item-rate')?.innerText || 0) || 0;
-                    const discPct = parseFloat(row.querySelector('.item-disc')?.innerText || 0) || 0;
-                    const gstPct = parseFloat(row.querySelector('.item-gst')?.innerText || 0) || 0;
-
-                    const discAmt = (qty * rate) * (discPct / 100);
-                    const taxable = (qty * rate) - discAmt;
-                    const taxAmt = taxable * (gstPct / 100);
-                    const lineTotal = taxable + taxAmt;
-
-                    subtotal += taxable;
-                    taxTotal += taxAmt;
-                    grandTotal += lineTotal;
-                });
-
-                if (document.getElementById('lblPoSubtotal')) {
-                    document.getElementById('lblPoSubtotal').innerText = `₹${subtotal.toFixed(2)}`;
-                }
-                if (document.getElementById('lblPoTax')) {
-                    document.getElementById('lblPoTax').innerText = `₹${taxTotal.toFixed(2)}`;
-                }
-                if (document.getElementById('lblPoGrandTotal')) {
-                    document.getElementById('lblPoGrandTotal').innerText = `₹${grandTotal.toFixed(2)}`;
-                }
-            }
-
-            function deletePoRow(rowIdx) {
-                const row = document.querySelector(`.po-item-row[data-row-idx="${rowIdx}"]`);
-                if (row) {
-                    row.remove();
-                    recalculatePoTotals();
-                }
-            }
-
-            function savePoEditsToServer() {
-                const btnSave = document.getElementById('btnSaveEdits');
-                btnSave.disabled = true;
-                btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
-
-                const expDeliveryStr = (document.getElementById('fieldExpDelivery')?.innerText || '').trim();
-                const paymentTerms = (document.getElementById('fieldPaymentTerms')?.innerText || '30 Days Net').trim();
-                const notes = (document.getElementById('fieldNotes')?.innerText || '').trim();
-
-                const items = [];
-                document.querySelectorAll('.po-item-row').forEach(row => {
-                    const itemId = parseInt(row.getAttribute('data-po-item-id') || '0', 10);
-                    const qty = parseFloat(row.querySelector('.item-qty')?.innerText || 1) || 1;
-                    const rate = parseFloat(row.querySelector('.item-rate')?.innerText || 0) || 0;
-                    const discPct = parseFloat(row.querySelector('.item-disc')?.innerText || 0) || 0;
-                    const gstPct = parseFloat(row.querySelector('.item-gst')?.innerText || 0) || 0;
-
-                    items.push({
-                        po_item_id: itemId,
-                        requested_qty: qty,
-                        purchase_rate: rate,
-                        discount_percent: discPct,
-                        gst_percent: gstPct
-                    });
-                });
-
-                const formData = new FormData();
-                formData.append('action', 'save_po_print_edits');
-                formData.append('po_id', currentPoId);
-                formData.append('expected_delivery_date', expDeliveryStr);
-                formData.append('payment_terms', paymentTerms);
-                formData.append('notes', notes);
-                formData.append('items_json', JSON.stringify(items));
-
-                fetch('orders.php', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(r => r.json())
-                .then(data => {
-                    btnSave.disabled = false;
-                    btnSave.innerHTML = '<i class="bi bi-check-circle-fill"></i> Save Changes';
-                    if (data.success) {
-                        alert('✓ Purchase order details updated successfully!');
-                        window.location.reload();
-                    } else {
-                        alert('Error saving changes: ' + (data.message || 'Unknown error.'));
-                    }
-                })
-                .catch(err => {
-                    btnSave.disabled = false;
-                    btnSave.innerHTML = '<i class="bi bi-check-circle-fill"></i> Save Changes';
-                    alert('Connection error while saving changes. Please try again.');
-                });
-            }
-        </script>
     </body>
     </html>
     <?php
@@ -1324,14 +1146,15 @@ include __DIR__ . '/../../includes/navbar.php';
                         <table class="table table-bordered table-sm align-middle" id="poItemsTable">
                             <thead class="table-light small">
                                 <tr>
-                                    <th style="width: 30%;">Medicine *</th>
-                                    <th style="width: 16%;" class="text-center">Current Stock</th>
-                                    <th style="width: 10%;">Pack</th>
-                                    <th style="width: 10%;">Req Qty *</th>
-                                    <th style="width: 12%;">Rate (₹) *</th>
-                                    <th style="width: 8%;">Disc %</th>
-                                    <th style="width: 8%;">GST %</th>
-                                    <th style="width: 13%;" class="text-end">Line Total (₹)</th>
+                                    <th style="width: 28%;">Medicine *</th>
+                                    <th style="width: 13%;" class="text-center">Current Stock</th>
+                                    <th style="width: 9%;">Pack</th>
+                                    <th style="width: 9%;">Req Qty *</th>
+                                    <th style="width: 9%;">Scheme</th>
+                                    <th style="width: 11%;">MRP (₹) *</th>
+                                    <th style="width: 7%;">Disc %</th>
+                                    <th style="width: 7%;">GST %</th>
+                                    <th style="width: 12%;" class="text-end">Line Total (₹)</th>
                                     <th style="width: 3%;"></th>
                                 </tr>
                             </thead>
@@ -1340,7 +1163,7 @@ include __DIR__ . '/../../includes/navbar.php';
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <th colspan="7" class="text-end">Grand Total:</th>
+                                    <th colspan="8" class="text-end">Grand Total:</th>
                                     <th class="text-end text-success fs-6" id="poGrandTotal">₹0.00</th>
                                     <th></th>
                                 </tr>
@@ -1402,13 +1225,15 @@ function addPoRow(prefill = null) {
         const avail = parseInt(m.available_stock) || 0;
         const icon = avail > 10 ? '🟢' : (avail > 0 ? '🟡' : '🔴');
         const sel = (prefill && parseInt(prefill.medicine_id) === parseInt(m.medicine_id)) ? 'selected' : '';
-        medOptions += `<option value="${m.medicine_id}" data-rate="${m.purchase_price}" data-gst="${m.gst_percent}" data-pack="${m.pack_size}" data-mrp="${m.mrp}" data-stock="${avail}" ${sel}>${icon} [Stock: ${avail}] ${m.medicine_name} (${m.dosage_form || ''} - ${m.strength || ''})</option>`;
+        const effectiveMrp = (m.mrp && parseFloat(m.mrp) > 0) ? parseFloat(m.mrp).toFixed(2) : (parseFloat(m.purchase_price || 0).toFixed(2));
+        medOptions += `<option value="${m.medicine_id}" data-rate="${m.purchase_price}" data-gst="${m.gst_percent}" data-pack="${m.pack_size}" data-mrp="${effectiveMrp}" data-stock="${avail}" ${sel}>${icon} [Stock: ${avail}] ${m.medicine_name} (${m.dosage_form || ''} - ${m.strength || ''})</option>`;
     });
 
     const initQty = prefill ? prefill.requested_qty : 10;
-    const initRate = prefill ? parseFloat(prefill.purchase_rate).toFixed(2) : '0.00';
-    const initDisc = prefill ? parseFloat(prefill.discount_percent).toFixed(2) : '0.00';
-    const initGst = prefill ? parseFloat(prefill.gst_percent).toFixed(2) : '0.00';
+    const initScheme = prefill ? parseInt(prefill.free_qty || 0) : 0;
+    const initRate = prefill ? parseFloat(prefill.mrp || prefill.purchase_rate || 0).toFixed(2) : '0.00';
+    const initDisc = prefill ? parseFloat(prefill.discount_percent || 0).toFixed(2) : '0.00';
+    const initGst = prefill ? parseFloat(prefill.gst_percent || 0).toFixed(2) : '0.00';
     const initPack = prefill ? prefill.pack_size : '1';
 
     row.innerHTML = `
@@ -1416,10 +1241,12 @@ function addPoRow(prefill = null) {
             <select name="item_medicine_id[]" class="form-select form-select-sm med-select" required onchange="onMedChange(this)">
                 ${medOptions}
             </select>
+            <input type="hidden" name="item_mrp[]" class="mrp-hidden-input" value="${initRate}">
         </td>
         <td class="text-center po-stock-cell"><span class="badge bg-light text-muted border">-</span></td>
         <td><input type="text" name="item_pack[]" class="form-control form-select-sm pack-input" value="${initPack}"></td>
         <td><input type="number" name="item_qty[]" class="form-control form-select-sm qty-input" min="1" value="${initQty}" required oninput="calcLine(this)"></td>
+        <td><input type="number" name="item_free_qty[]" class="form-control form-select-sm scheme-input" min="0" value="${initScheme}" placeholder="0" title="Free / Scheme Quantity" oninput="calcLine(this)"></td>
         <td><input type="number" step="0.01" name="item_rate[]" class="form-control form-select-sm rate-input" min="0" value="${initRate}" required oninput="calcLine(this)"></td>
         <td><input type="number" step="0.01" name="item_discount[]" class="form-control form-select-sm disc-input" min="0" max="100" value="${initDisc}" oninput="calcLine(this)"></td>
         <td><input type="number" step="0.01" name="item_gst[]" class="form-control form-select-sm gst-input" min="0" value="${initGst}" oninput="calcLine(this)"></td>
@@ -1432,12 +1259,12 @@ function addPoRow(prefill = null) {
 
     const selElem = row.querySelector('.med-select');
     if (prefill) {
-        calcLine(selElem);
         const opt = selElem.options[selElem.selectedIndex];
         if (opt && opt.value) {
             const stock = parseInt(opt.dataset.stock) || 0;
             row.querySelector('.po-stock-cell').innerHTML = getPoStockBadge(stock);
         }
+        calcLine(selElem);
     }
 }
 
@@ -1445,12 +1272,16 @@ function onMedChange(select) {
     const opt = select.options[select.selectedIndex];
     const row = select.closest('tr');
     if (opt.value) {
-        row.querySelector('.rate-input').value = opt.dataset.rate || '0.00';
-        row.querySelector('.gst-input').value = opt.dataset.gst || '0.00';
+        const mrpVal = (opt.dataset.mrp && parseFloat(opt.dataset.mrp) > 0) ? parseFloat(opt.dataset.mrp) : (parseFloat(opt.dataset.rate) || 0);
+        row.querySelector('.rate-input').value = mrpVal.toFixed(2);
+        row.querySelector('.mrp-hidden-input').value = mrpVal.toFixed(2);
+        row.querySelector('.gst-input').value = parseFloat(opt.dataset.gst || 0).toFixed(2);
         row.querySelector('.pack-input').value = opt.dataset.pack || '1';
         const stock = parseInt(opt.dataset.stock) || 0;
         row.querySelector('.po-stock-cell').innerHTML = getPoStockBadge(stock);
     } else {
+        row.querySelector('.rate-input').value = '0.00';
+        row.querySelector('.mrp-hidden-input').value = '0.00';
         row.querySelector('.po-stock-cell').innerHTML = '<span class="badge bg-light text-muted border">-</span>';
     }
     calcLine(select);
@@ -1458,10 +1289,14 @@ function onMedChange(select) {
 
 function calcLine(elem) {
     const row = elem.closest('tr');
+    if (!row) return;
     const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
     const rate = parseFloat(row.querySelector('.rate-input').value) || 0;
     const disc = parseFloat(row.querySelector('.disc-input').value) || 0;
     const gst = parseFloat(row.querySelector('.gst-input').value) || 0;
+
+    const mrpHid = row.querySelector('.mrp-hidden-input');
+    if (mrpHid) mrpHid.value = rate.toFixed(2);
 
     const gross = qty * rate;
     const discAmt = gross * (disc / 100);
@@ -1484,7 +1319,8 @@ function recalcPoGrand() {
         const taxable = gross - (gross * (disc / 100));
         grand += taxable + (taxable * (gst / 100));
     });
-    document.getElementById('poGrandTotal').textContent = '₹' + grand.toFixed(2);
+    const grandLabel = document.getElementById('poGrandTotal');
+    if (grandLabel) grandLabel.textContent = '₹' + grand.toFixed(2);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1550,8 +1386,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <th>Medicine</th>
                                 <th>Pack</th>
                                 <th class="text-center">Requested</th>
+                                <th class="text-center">Scheme</th>
                                 <th class="text-center">Received</th>
-                                <th class="text-end">Rate (₹)</th>
+                                <th class="text-end">MRP (₹)</th>
                                 <th class="text-center">GST %</th>
                                 <th class="text-end">Line Total (₹)</th>
                             </tr>
@@ -1566,10 +1403,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </td>
                                     <td><?= htmlspecialchars($it['pack_size']) ?></td>
                                     <td class="text-center fw-bold"><?= (int)$it['requested_qty'] ?></td>
-                                    <td class="text-center <?= (int)$it['received_qty'] >= (int)$it['requested_qty'] ? 'text-success fw-bold' : 'text-muted' ?>">
+                                    <td class="text-center text-success fw-bold"><?= (int)($it['free_qty'] ?? 0) ?></td>
+                                    <td class="text-center <?= (int)$it['received_qty'] >= ((int)$it['requested_qty'] + (int)($it['free_qty'] ?? 0)) ? 'text-success fw-bold' : 'text-muted' ?>">
                                         <?= (int)$it['received_qty'] ?>
                                     </td>
-                                    <td class="text-end">₹<?= number_format((float)$it['purchase_rate'], 2) ?></td>
+                                    <td class="text-end">₹<?= number_format((float)(!empty($it['mrp']) && (float)$it['mrp'] > 0 ? $it['mrp'] : $it['purchase_rate']), 2) ?></td>
                                     <td class="text-center"><?= (float)$it['gst_percent'] ?>%</td>
                                     <td class="text-end fw-bold">₹<?= number_format((float)$it['line_total'], 2) ?></td>
                                 </tr>
@@ -1577,7 +1415,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colspan="7" class="text-end">Grand Total:</th>
+                                <th colspan="8" class="text-end">Grand Total:</th>
                                 <th class="text-end text-success fs-6">₹<?= number_format((float)$viewPo['total_amount'], 2) ?></th>
                             </tr>
                         </tfoot>
@@ -1588,6 +1426,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <a href="orders.php?view_id=<?= $viewPo['po_id'] ?>&print=1" target="_blank" class="btn btn-outline-dark rounded-pill px-3">
                     <i class="ti ti-printer me-1"></i> Print Order
                 </a>
+                <?php if ($canEdit && in_array($viewPo['status'], ['DRAFT', 'SUBMITTED', 'APPROVED'], true) && (int)$viewPo['total_received_units'] === 0): ?>
+                    <a href="orders.php?edit_id=<?= $viewPo['po_id'] ?>" class="btn btn-primary rounded-pill px-3">
+                        <i class="ti ti-edit me-1"></i> Edit Order
+                    </a>
+                <?php endif; ?>
                 <?php if (in_array($viewPo['status'], ['APPROVED', 'PARTIALLY_RECEIVED'], true)): ?>
                     <a href="grn.php?po_id=<?= $viewPo['po_id'] ?>" class="btn btn-emerald text-white rounded-pill px-3" style="background-color: #059669;">
                         <i class="ti ti-truck-loading me-1"></i> Receive Goods (GRN)

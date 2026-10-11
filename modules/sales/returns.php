@@ -72,11 +72,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ], $validItems, $userId);
 
             $createdReturnId = (int)$res['return_id'];
-            $successMessage = "Sales Return #{$res['return_number']} posted successfully! Refund amount: ₹" . number_format($res['total_refund_amount'], 2);
+            $retNo = urlencode($res['return_number']);
+            $refundAmt = urlencode((string)$res['total_refund_amount']);
+            
+            // Cleanly redirect to Returns list page without keeping modal open
+            header("Location: returns.php?success_return=1&return_id={$createdReturnId}&return_number={$retNo}&refund_amount={$refundAmt}");
+            exit;
         } catch (Exception $e) {
             $errors[] = $e->getMessage();
         }
     }
+}
+
+// Handle Success Message from Redirect
+if (!empty($_GET['success_return']) && !empty($_GET['return_number'])) {
+    $createdReturnId = (int)($_GET['return_id'] ?? 0);
+    $returnNumber = htmlspecialchars($_GET['return_number']);
+    $refundStr = number_format((float)($_GET['refund_amount'] ?? 0), 2);
+    $successMessage = "Sales Return #{$returnNumber} posted successfully! Refund amount: ₹{$refundStr}";
 }
 
 // Handle AJAX Search for Sale
@@ -417,7 +430,7 @@ include __DIR__ . '/../../includes/navbar.php';
                 </div>
 
                 <!-- Step 2: Selected Sale & Item Return Form -->
-                <form method="POST" id="formProcessReturn" class="d-none">
+                <form method="POST" action="returns.php" id="formProcessReturn" class="d-none">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="process_return">
                     <input type="hidden" name="sale_id" id="selectedSaleId" value="">
@@ -588,7 +601,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 let rowIdx = 0;
                 s.items.forEach(item => {
-                    item.batches.forEach(b => {
+                    const batchesList = (item.batches && item.batches.length > 0) ? item.batches : [{
+                        batch_id: 0,
+                        batch_number: 'Standard',
+                        expiry_date: '—',
+                        allocated_quantity: item.sold_quantity,
+                        batch_previously_returned: item.previously_returned_qty,
+                        batch_returnable: item.returnable_quantity
+                    }];
+
+                    batchesList.forEach(b => {
                         const tr = document.createElement('tr');
                         const unitRate = parseFloat(item.unit_price) * (1 - (parseFloat(item.discount_percent || 0) / 100)) * (1 + (parseFloat(item.tax_percent || 0) / 100));
                         
@@ -656,6 +678,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         grandRefundAmountDisplay.textContent = `₹${total.toFixed(2)}`;
+    }
+
+    // Auto-open modal and pre-load items if sale_id is provided in URL (and not on success redirect)
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetSaleId = urlParams.get('sale_id') || urlParams.get('auto_sale_id');
+    if (targetSaleId && !urlParams.has('success_return')) {
+        const modalElement = document.getElementById('modalNewReturn');
+        if (modalElement) {
+            const modalInstance = new bootstrap.Modal(modalElement);
+            modalInstance.show();
+            loadSaleForReturn(parseInt(targetSaleId, 10));
+        }
     }
 });
 </script>

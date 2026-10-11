@@ -159,11 +159,11 @@ class GrnService
                 $rejectedQty = max(0, (int)($item['rejected_qty'] ?? 0));
                 $damagedQty = max(0, (int)($item['damaged_qty'] ?? 0));
 
-                if ($rejectedQty + $damagedQty > $receivedQty) {
-                    throw new InvalidArgumentException("Line #{$lineNum}: Rejected + damaged quantities cannot exceed received quantity.");
+                if ($rejectedQty + $damagedQty > ($receivedQty + $freeQty)) {
+                    throw new InvalidArgumentException("Line #{$lineNum}: Rejected + damaged quantities cannot exceed total received units (billed + scheme).");
                 }
 
-                $acceptedQty = $receivedQty - $rejectedQty - $damagedQty;
+                $acceptedQty = max(0, ($receivedQty + $freeQty) - $rejectedQty - $damagedQty);
 
                 // Over-receipt validation against PO item
                 $poItemId = !empty($item['po_item_id']) ? (int)$item['po_item_id'] : null;
@@ -189,6 +189,7 @@ class GrnService
                 $gstPct = max(0.0, (float)($item['gst_percent'] ?? 0.00));
                 $shelf = !empty($item['shelf_location']) ? trim($item['shelf_location']) : null;
                 $remarks = !empty($item['remarks']) ? trim($item['remarks']) : null;
+                $composition = !empty($item['composition']) ? trim($item['composition']) : null;
 
                 // Line financials calculated on billed quantity (received_qty, or accepted_qty per policy)
                 $billedUnits = $receivedQty;
@@ -223,7 +224,8 @@ class GrnService
                     'sale_price'       => $salePrice,
                     'line_total'       => $lineTot,
                     'shelf_location'   => $shelf,
-                    'remarks'          => $remarks
+                    'remarks'          => $remarks,
+                    'composition'      => $composition
                 ];
             }
 
@@ -347,6 +349,12 @@ class GrnService
                     // 2. Increment medicine aggregate stock
                     $medUpd = $this->pdo->prepare("UPDATE medicines SET stock_quantity = stock_quantity + ? WHERE medicine_id = ?");
                     $medUpd->execute([$accepted, $medId]);
+                }
+
+                // Persist medicine composition if provided during receipt without silently overwriting existing composition
+                if (!empty($line['composition'])) {
+                    $compUpd = $this->pdo->prepare("UPDATE medicines SET composition = ? WHERE medicine_id = ? AND (composition IS NULL OR TRIM(composition) = '')");
+                    $compUpd->execute([$line['composition'], $medId]);
                 }
 
                 // Update PO Item received quantity if linked

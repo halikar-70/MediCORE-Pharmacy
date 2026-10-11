@@ -124,26 +124,36 @@ class AnalyticsService
         $salesStmt->execute([$startDate, $endDate]);
         $sales = $salesStmt->fetch(PDO::FETCH_ASSOC);
 
-        // Sales by payment mode
+        // Collections & disbursements by payment mode (derived strictly from authoritative payment/refund vouchers)
         $pmStmt = $this->pdo->prepare("
             SELECT 
-                payment_mode,
-                COALESCE(SUM(grand_total), 0.00) AS amount
-            FROM pharmacy_sales
-            WHERE sale_date BETWEEN ? AND ?
-              AND status != 'CANCELLED'
-            GROUP BY payment_mode
+                p.payment_mode,
+                COALESCE(SUM(p.amount), 0.00) AS net_amount,
+                COALESCE(SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0.00 END), 0.00) AS gross_amount,
+                COALESCE(SUM(CASE WHEN p.amount < 0 THEN ABS(p.amount) ELSE 0.00 END), 0.00) AS refund_amount
+            FROM pharmacy_sale_payments p
+            JOIN pharmacy_sales s ON p.sale_id = s.sale_id
+            WHERE s.status != 'CANCELLED'
+              AND p.payment_date BETWEEN ? AND ?
+            GROUP BY p.payment_mode
         ");
         $pmStmt->execute([$startDate, $endDate]);
         $pmRows = $pmStmt->fetchAll(PDO::FETCH_ASSOC);
         $pmMap = ['CASH' => 0.0, 'CARD' => 0.0, 'UPI' => 0.0, 'CREDIT' => 0.0, 'OTHER' => 0.0];
+        $pmBreakdown = [];
         foreach ($pmRows as $r) {
             $m = strtoupper($r['payment_mode'] ?? 'OTHER');
+            $net = (float)$r['net_amount'];
             if (isset($pmMap[$m])) {
-                $pmMap[$m] = (float)$r['amount'];
+                $pmMap[$m] = $net;
             } else {
-                $pmMap['OTHER'] += (float)$r['amount'];
+                $pmMap['OTHER'] += $net;
             }
+            $pmBreakdown[$m] = [
+                'net'    => $net,
+                'gross'  => (float)$r['gross_amount'],
+                'refund' => (float)$r['refund_amount']
+            ];
         }
 
         // Sales Returns
@@ -283,6 +293,7 @@ class AnalyticsService
                 'card'             => $pmMap['CARD'],
                 'upi'              => $pmMap['UPI'],
                 'credit'           => $pmMap['CREDIT'],
+                'payment_breakdown'=> $pmBreakdown,
                 'returns_count'    => (int)$salesReturns['return_count'],
                 'returns_value'    => (float)$salesReturns['return_value'],
                 'net_after_returns'=> $netSalesAfterReturns
@@ -370,6 +381,40 @@ class AnalyticsService
             GROUP BY sale_type
         ");
         $stmt->execute([$dateRange['start_date'], $dateRange['end_date']]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Authoritative Payment Mode Collections & Reconciliation:
+     * Derived strictly from individual receipt (+amt) and refund (-amt) vouchers
+     * in pharmacy_sale_payments, linked to non-cancelled sales.
+     */
+    public function getPaymentModeCollections(array $dateRange, ?int $saleId = null): array
+    {
+        $where = ["s.status != 'CANCELLED'", "p.payment_date BETWEEN ? AND ?"];
+        $params = [$dateRange['start_date'], $dateRange['end_date']];
+
+        if ($saleId !== null) {
+            $where[] = "p.sale_id = ?";
+            $params[] = $saleId;
+        }
+
+        $whereSql = implode(' AND ', $where);
+
+        $stmt = $this->pdo->prepare("
+            SELECT 
+                p.payment_mode,
+                COALESCE(SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0.00 END), 0.00) AS gross_receipts,
+                COALESCE(SUM(CASE WHEN p.amount < 0 THEN ABS(p.amount) ELSE 0.00 END), 0.00) AS refund_outflow,
+                COALESCE(SUM(p.amount), 0.00) AS net_movement,
+                COUNT(p.payment_id) AS voucher_count
+            FROM pharmacy_sale_payments p
+            JOIN pharmacy_sales s ON p.sale_id = s.sale_id
+            WHERE {$whereSql}
+            GROUP BY p.payment_mode
+            ORDER BY p.payment_mode ASC
+        ");
+        $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 

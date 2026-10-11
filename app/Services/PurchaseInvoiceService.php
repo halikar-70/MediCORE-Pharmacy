@@ -490,7 +490,8 @@ class PurchaseInvoiceService
         if (!$inv) return null;
 
         $itemsStmt = $this->pdo->prepare("
-            SELECT pii.*, m.medicine_name, m.generic_name, m.strength, m.dosage_form, m.manufacturer
+            SELECT pii.*, m.medicine_name, m.generic_name, m.strength, m.dosage_form, m.manufacturer,
+                   m.price as mrp, m.purchase_price as default_purchase_price
             FROM pharmacy_purchase_invoice_items pii
             JOIN medicines m ON pii.medicine_id = m.medicine_id
             WHERE pii.invoice_id = ?

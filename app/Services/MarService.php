@@ -61,6 +61,10 @@ class MarService
 
         $this->pdo->beginTransaction();
         try {
+            // Lock prescription row to serialize concurrent schedule generation
+            $lockRx = $this->pdo->prepare("SELECT prescription_id FROM pharmacy_prescriptions WHERE prescription_id = ? FOR UPDATE");
+            $lockRx->execute([$prescriptionId]);
+
             $createdSchedules = [];
 
             $insMar = $this->pdo->prepare("
@@ -68,18 +72,20 @@ class MarService
                     mar_number, prescription_id, prescription_item_id, patient_id,
                     patient_name, ipd_admission_no, ward, bed_number,
                     medicine_id, scheduled_date, scheduled_time, scheduled_dose,
-                    dose_unit, route, status, administered_qty, created_by, created_at
+                    dose_unit, route, status, administered_qty, idempotency_key, created_by, created_at
                 ) VALUES (
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?, 'SCHEDULED', 0, ?, NOW()
+                    ?, ?, 'SCHEDULED', 0, ?, ?, NOW()
                 )
             ");
 
             $checkMar = $this->pdo->prepare("
                 SELECT mar_id FROM pharmacy_mar_records
-                WHERE prescription_item_id = ? AND scheduled_date = ? AND scheduled_time = ?
+                WHERE (prescription_item_id = ? AND scheduled_date = ? AND scheduled_time = ?)
+                   OR idempotency_key = ?
+                FOR UPDATE
             ");
 
             foreach ($items as $it) {
@@ -99,8 +105,10 @@ class MarService
                     $dateFormatted = $currDate->format('Y-m-d');
 
                     foreach ($slots as $timeSlot) {
+                        $slotKey = "MAR-{$it['item_id']}-{$dateFormatted}-{$timeSlot}";
+
                         // Check if duplicate already scheduled
-                        $checkMar->execute([$it['item_id'], $dateFormatted, $timeSlot]);
+                        $checkMar->execute([$it['item_id'], $dateFormatted, $timeSlot, $slotKey]);
                         if ($checkMar->fetchColumn()) {
                             continue;
                         }
@@ -121,6 +129,7 @@ class MarService
                             $doseAmount,
                             $doseUnit,
                             $route,
+                            $slotKey,
                             $userId
                         ]);
 

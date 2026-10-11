@@ -52,6 +52,7 @@ class DocumentSequenceService
                     $prefix = match ($sequenceKey) {
                         'DIRECT_STOCK_IN' => 'DSI-',
                         'DIRECT_STOCK_OUT' => 'DSO-',
+                        'SALE_REFUND' => 'RFD-',
                         default => strtoupper(substr($sequenceKey, 0, 3)) . '-'
                     };
                     $padLength = 6;

@@ -446,7 +446,16 @@ class PurchaseOrderService
         if (!$order) return null;
 
         $itemsStmt = $this->pdo->prepare("
-            SELECT poi.*, m.medicine_name, m.generic_name, m.strength, m.dosage_form, m.manufacturer, m.hsn_code
+            SELECT poi.*, m.medicine_name, m.generic_name, m.strength, m.dosage_form, m.manufacturer, m.hsn_code,
+                   COALESCE(
+                       NULLIF(poi.expected_mrp, 0),
+                       NULLIF(m.price, 0),
+                       (SELECT mb.mrp FROM medicine_batches mb WHERE mb.medicine_id = m.medicine_id AND mb.mrp > 0 ORDER BY mb.batch_id DESC LIMIT 1),
+                       NULLIF(poi.purchase_rate, 0),
+                       NULLIF(m.purchase_price, 0),
+                       0.00
+                   ) as mrp,
+                   m.purchase_price as default_purchase_price
             FROM pharmacy_purchase_order_items poi
             JOIN medicines m ON poi.medicine_id = m.medicine_id
             WHERE poi.po_id = ?

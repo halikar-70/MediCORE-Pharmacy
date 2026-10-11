@@ -52,6 +52,7 @@ class HospitalIntegrationService implements HospitalIntegrationInterface
                 FROM patients
                 WHERE (patient_code LIKE ? OR phone LIKE ? OR CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?)
                   AND (status IS NULL OR status = 'Active' OR status = 1)
+                  AND deleted_at IS NULL
                 ORDER BY patient_id DESC
                 LIMIT 25
             ");

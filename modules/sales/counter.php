@@ -168,6 +168,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $patientId = !empty($_POST['patient_id']) ? (int)$_POST['patient_id'] : null;
 
+            $editingSaleId = (int)($_POST['editing_sale_id'] ?? 0);
+            $originalSaleNumber = trim($_POST['original_sale_number'] ?? '');
+            if ($editingSaleId > 0) {
+                $salesService->cancelSale($editingSaleId, "Superseded by edited bill (Replaced by edited invoice)", $_SESSION['user_id'] ?? null);
+                $cleanNotes = preg_replace('/\[EDITED:\s*Replaced Bill #[^\]]+\]\s*/i', '', $notes);
+                $editRemark = "[EDITED: Replaced Bill #{$originalSaleNumber}]";
+                $notes = $cleanNotes !== '' ? ($editRemark . ' ' . $cleanNotes) : $editRemark;
+            }
+
             $saleData = [
                 'sale_type'        => 'COUNTER_SALE',
                 'customer_name'    => $customerName !== '' ? $customerName : 'Walk-in Customer',
@@ -193,7 +202,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $hasOverride
             );
 
-            $success = "Sale completed successfully! Invoice #{$completedSale['sale_number']} generated.";
+            if ($editingSaleId > 0 && !empty($completedSale['sale_id'])) {
+                $salesService->recordBillEditHistory($editingSaleId, (int)$completedSale['sale_id'], 'OPD Medicines modified in POS', $_SESSION['user_id'] ?? null);
+            }
+
+            if ($editingSaleId > 0 && !empty($originalSaleNumber)) {
+                $success = "Sale updated successfully! New edited Invoice #{$completedSale['sale_number']} generated (Replaced #{$originalSaleNumber}).";
+            } else {
+                $success = "Sale completed successfully! Invoice #{$completedSale['sale_number']} generated.";
+            }
         } catch (Exception $e) {
             $error = $e->getMessage();
         }
@@ -207,7 +224,34 @@ if (isset($_GET['print_id'])) {
     exit;
 }
 
-$page_title = 'Create OPD Bill';
+// Load sale for editing if edit_sale_id is provided
+$editSaleId = (int)($_GET['edit_sale_id'] ?? $_GET['edit_id'] ?? 0);
+$editSale = null;
+$editSaleItems = [];
+if ($editSaleId > 0) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM pharmacy_sales WHERE sale_id = ?");
+        $stmt->execute([$editSaleId]);
+        $editSale = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($editSale) {
+            $stmtItems = $pdo->prepare("
+                SELECT si.*, m.medicine_name, m.generic_name, m.composition, m.hsn_code,
+                       m.dosage_form, m.strength, m.pack_size, m.barcode, m.gst_percent as med_gst,
+                       COALESCE((SELECT batch_number FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 'GEN-01') as batch_number,
+                       COALESCE((SELECT expiry_date FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), '') as expiry_date,
+                       COALESCE((SELECT batch_id FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 0) as batch_id,
+                       COALESCE((SELECT unit_cost FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 0.00) as purchase_price
+                FROM pharmacy_sale_items si
+                JOIN medicines m ON si.medicine_id = m.medicine_id
+                WHERE si.sale_id = ?
+            ");
+            $stmtItems->execute([$editSaleId]);
+            $editSaleItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $ex) {}
+}
+
+$page_title = $editSale ? "Edit OPD Bill #{$editSale['sale_number']}" : 'Create OPD Bill';
 
 // Fetch Recent 10 Counter Sales for quick table display
 $recentOpdBills = [];
@@ -728,17 +772,45 @@ include __DIR__ . '/../../includes/navbar.php';
         </div>
     </div>
 
+    <!-- Edit Mode Active Notification Banner -->
+    <?php if ($editSale): ?>
+        <div class="alert alert-warning border-warning shadow-sm rounded-4 p-3.5 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-width: 2px !important;">
+            <div class="d-flex align-items-center gap-3">
+                <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 shadow-xs" style="width: 44px; height: 44px; background: #fef08a; color: #854d0e; border: 1px solid #fde047;">
+                    <i class="ti ti-edit fs-3"></i>
+                </div>
+                <div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <h6 class="fw-bold text-dark mb-0 fs-6">Editing Bill #<?= htmlspecialchars($editSale['sale_number']) ?></h6>
+                        <span class="badge bg-warning text-dark border border-warning-subtle fw-bold px-2 py-0.5" style="font-size: 0.72rem;">EDIT MODE ACTIVE</span>
+                    </div>
+                    <div class="small text-muted mt-1">
+                        Patient: <strong><?= htmlspecialchars($editSale['customer_name']) ?></strong> &bull; Original Date: <?= htmlspecialchars(date('d-M-Y h:i A', strtotime($editSale['created_at']))) ?>.
+                        Add, delete, or change medicines &amp; quantities below. Submitting will save the updated bill with an <strong>[EDITED]</strong> remark.
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <a href="<?= BASE_URL ?>modules/patients/history.php?uhid=<?= urlencode($editSale['customer_name'] ?? '') ?>" class="btn btn-sm btn-outline-dark rounded-pill px-3 py-1.5 fw-semibold">
+                    <i class="ti ti-arrow-left me-1"></i> Cancel &amp; Return to History
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Main Create OPD Bill Card (Unified Full-Width Tab) -->
     <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
         <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
-                <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; border-radius: 12px; background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0;">
-                    <i class="bi bi-file-earmark-medical fs-4"></i>
+                <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; border-radius: 12px; background-color: <?= $editSale ? '#fef3c7' : '#ecfdf5' ?>; color: <?= $editSale ? '#b45309' : '#059669' ?>; border: 1px solid <?= $editSale ? '#fde68a' : '#a7f3d0' ?>;">
+                    <i class="bi <?= $editSale ? 'bi-pencil-square' : 'bi-file-earmark-medical' ?> fs-4"></i>
                 </div>
                 <div>
-                    <h4 class="fw-bold mb-0 text-dark" style="font-size: 1.25rem; letter-spacing: -0.2px;">Create OPD Bill</h4>
+                    <h4 class="fw-bold mb-0 text-dark" style="font-size: 1.25rem; letter-spacing: -0.2px;">
+                        <?= $editSale ? "Edit Medicines &bull; Bill #{$editSale['sale_number']}" : 'Create OPD Bill' ?>
+                    </h4>
                     <div class="text-muted small" style="font-size: 0.8rem;">
-                        Outpatient Dispensing &amp; Counter POS Billing
+                        <?= $editSale ? 'Modify medicines, quantities, or prices for this bill' : 'Outpatient Dispensing &amp; Counter POS Billing' ?>
                     </div>
                 </div>
             </div>
@@ -759,6 +831,10 @@ include __DIR__ . '/../../includes/navbar.php';
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
                 <input type="hidden" name="cart_items" id="cartItemsJson" value="[]">
                 <input type="hidden" name="idempotency_key" value="<?= bin2hex(random_bytes(16)) ?>">
+                <?php if ($editSale): ?>
+                    <input type="hidden" name="editing_sale_id" value="<?= (int)$editSale['sale_id'] ?>">
+                    <input type="hidden" name="original_sale_number" value="<?= htmlspecialchars($editSale['sale_number']) ?>">
+                <?php endif; ?>
                 
                 <!-- Hidden inputs passed to backend from modal / controls -->
                 <input type="hidden" name="patient_id" id="hiddenPatientId" value="">
@@ -3486,7 +3562,64 @@ document.addEventListener('keydown', function(e) {
 // Initialize on page load: trigger Category change to load initial medicines
 document.addEventListener('DOMContentLoaded', function() {
     onCategorySelectChange('');
-    checkSavedDraft();
+    
+    <?php if ($editSale && !empty($editSaleItems)): ?>
+        // PRE-POPULATE DATA FROM BILL BEING EDITED
+        <?php if (!empty($editSale['patient_id'])): ?>
+            selectCounterPatientById(<?= (int)$editSale['patient_id'] ?>);
+        <?php else: ?>
+            document.getElementById('hiddenCustomerName').value = <?= json_encode($editSale['customer_name'] ?? 'Walk-in Customer') ?>;
+            document.getElementById('hiddenCustomerMobile').value = <?= json_encode($editSale['customer_mobile'] ?? '') ?>;
+            const pSearch = document.getElementById('counterPatientSearchInput');
+            if (pSearch) pSearch.value = <?= json_encode($editSale['customer_name'] ?? '') ?>;
+            const cardName = document.getElementById('cardPatientName');
+            if (cardName) cardName.textContent = <?= json_encode($editSale['customer_name'] ?? '') ?>;
+            const cardAvatar = document.getElementById('cardPatientAvatar');
+            if (cardAvatar) cardAvatar.textContent = <?= json_encode(strtoupper(substr(trim($editSale['customer_name'] ?? 'W'), 0, 1))) ?>;
+        <?php endif; ?>
+
+        <?php if (!empty($editSale['doctor_name'])): ?>
+            const docInp = document.getElementById('displayDoctorName');
+            if (docInp) docInp.value = <?= json_encode($editSale['doctor_name']) ?>;
+            const hiddenDoc = document.getElementById('hiddenDoctorName');
+            if (hiddenDoc) hiddenDoc.value = <?= json_encode($editSale['doctor_name']) ?>;
+        <?php endif; ?>
+
+        <?php if (!empty($editSale['notes'])): ?>
+            const notesInp = document.getElementById('hiddenNotes');
+            if (notesInp) notesInp.value = <?= json_encode($editSale['notes']) ?>;
+        <?php endif; ?>
+
+        <?php if ((float)$editSale['discount_percent'] > 0): ?>
+            const discInp = document.getElementById('discountValueInput');
+            if (discInp) discInp.value = <?= (float)$editSale['discount_percent'] ?>;
+        <?php endif; ?>
+
+        cart = <?= json_encode(array_map(function($it) {
+            return [
+                'medicine_id'     => (int)$it['medicine_id'],
+                'medicine_name'   => $it['medicine_name'],
+                'generic_name'    => $it['generic_name'] ?? '',
+                'composition'     => $it['composition'] ?? '',
+                'batch_id'        => (int)($it['batch_id'] ?? 0),
+                'batch_number'    => $it['batch_number'] ?? 'GEN-01',
+                'manufacturer'    => '',
+                'expiry_date'     => $it['expiry_date'] ?? '',
+                'purchase_price'  => (float)($it['purchase_price'] ?? 0),
+                'category'        => 'Medicine',
+                'unit'            => $it['dosage_form'] ?? 'unit',
+                'quantity'        => (int)$it['quantity'],
+                'price'           => (float)$it['unit_price'],
+                'max_stock'       => 999,
+                'gst_percent'     => (float)($it['gst_percent'] ?? $it['med_gst'] ?? 0)
+            ];
+        }, $editSaleItems), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+        renderCart();
+        showAutoAddNotice('Loaded <?= count($editSaleItems) ?> medicine(s) from Bill #<?= htmlspecialchars($editSale['sale_number']) ?> for editing', 'success');
+    <?php else: ?>
+        checkSavedDraft();
+    <?php endif; ?>
 
     // Ensure patient suggestion dropdown disappears whenever New Patient modal opens or closes
     const newOpdModalEl = document.getElementById('newOpdPatientModal');
@@ -3527,7 +3660,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Start with focus directly on Patient search input for seamless keyboard workflow
     setTimeout(function() {
         const pInput = document.getElementById('counterPatientSearchInput');
-        if (pInput) {
+        if (pInput && !<?= $editSale ? 'true' : 'false' ?>) {
             pInput.focus();
             pInput.select();
         }

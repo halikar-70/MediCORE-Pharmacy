@@ -458,7 +458,7 @@ if ($isPrint) {
                             <th class="text-left" style="padding-left: 6px;">Medicine Description</th>
                             <th>Batch</th>
                             <th class="text-center">Billed Qty</th>
-                            <th class="text-right" style="padding-right: 6px;">Rate (₹)</th>
+                            <th class="text-right" style="padding-right: 6px;">MRP (₹)</th>
                             <th class="text-center">Disc %</th>
                             <th class="text-center">GST %</th>
                             <th class="text-right" style="padding-right: 6px;">Taxable (₹)</th>
@@ -467,17 +467,18 @@ if ($isPrint) {
                     </thead>
                     <tbody>
                         <?php foreach ($viewInv['items'] as $i => $item): ?>
+                            <?php $displayMrp = (!empty($item['mrp']) && (float)$item['mrp'] > 0) ? (float)$item['mrp'] : (float)$item['purchase_rate']; ?>
                             <tr>
                                 <td class="text-center"><?= $i + 1 ?></td>
                                 <td class="text-left" style="padding-left: 6px;">
                                     <strong><?= htmlspecialchars($item['medicine_name']) ?></strong>
                                     <?php if (!empty($item['generic_name'])): ?>
-                                        <div style="font-size: 9.5px; color: #555;"><?= htmlspecialchars($item['generic_name']) ?></div>
+                                        <div style="font-size: 9.5px; color: #555"><?= htmlspecialchars($item['generic_name']) ?></div>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-center font-mono"><?= htmlspecialchars($item['batch_number'] ?? '—') ?></td>
                                 <td class="text-center fw-bold"><?= $item['quantity'] ?></td>
-                                <td class="text-right" style="padding-right: 6px;">₹<?= number_format((float)$item['purchase_rate'], 2) ?></td>
+                                <td class="text-right" style="padding-right: 6px;">₹<?= number_format($displayMrp, 2) ?></td>
                                 <td class="text-center"><?= (float)$item['discount_percent'] ?>%</td>
                                 <td class="text-center"><?= (float)$item['gst_percent'] ?>%</td>
                                 <td class="text-right" style="padding-right: 6px;">₹<?= number_format((float)$item['taxable_amount'], 2) ?></td>
@@ -1024,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <th>Medicine</th>
                                 <th>Batch</th>
                                 <th class="text-center">Billed Qty</th>
-                                <th class="text-end">Rate (₹)</th>
+                                <th class="text-end">MRP (₹)</th>
                                 <th class="text-center">GST %</th>
                                 <th class="text-end">Taxable (₹)</th>
                                 <th class="text-end">Total (₹)</th>
@@ -1039,7 +1040,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </td>
                                     <td class="font-monospace"><?= htmlspecialchars($it['batch_number'] ?? '—') ?></td>
                                     <td class="text-center fw-bold"><?= (int)$it['quantity'] ?></td>
-                                    <td class="text-end">₹<?= number_format((float)$it['purchase_rate'], 2) ?></td>
+                                    <td class="text-end">₹<?= number_format((float)(!empty($it['mrp']) && (float)$it['mrp'] > 0 ? $it['mrp'] : $it['purchase_rate']), 2) ?></td>
                                     <td class="text-center"><?= (float)$it['gst_percent'] ?>%</td>
                                     <td class="text-end">₹<?= number_format((float)$it['taxable_amount'], 2) ?></td>
                                     <td class="text-end fw-bold">₹<?= number_format((float)$it['line_total'], 2) ?></td>

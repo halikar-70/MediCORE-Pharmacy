@@ -5,10 +5,31 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../config/session.php';
 require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../app/Services/DocumentSequenceService.php';
+require_once __DIR__ . '/../../app/Services/StockLedgerService.php';
+require_once __DIR__ . '/../../app/Services/FefoService.php';
+require_once __DIR__ . '/../../app/Services/AuditService.php';
+require_once __DIR__ . '/../../app/Services/SalesService.php';
 
 use Pharmacy\Database\Database;
+use Pharmacy\Services\SalesService;
 
 require_permission('pharmacy.patients.view');
+
+// AJAX Endpoint: 1-Month Bill Edit History & Version Snapshots
+if (isset($_GET['ajax_bill_history'])) {
+    header('Content-Type: application/json');
+    $saleId = (int)($_GET['sale_id'] ?? 0);
+    $salesService = new SalesService($pdo);
+    $currSale = $salesService->getSale($saleId);
+    $histories = $salesService->getBillEditHistory($saleId);
+    echo json_encode([
+        'success' => true,
+        'current_sale' => $currSale,
+        'history_versions' => $histories
+    ]);
+    exit;
+}
 
 $page_title = 'Patient Pharmacy History & Billing Ledger';
 
@@ -375,10 +396,12 @@ if ($patientInfo) {
             s.balance_amount,
             s.payment_status,
             s.payment_mode,
+            s.status,
+            s.cancellation_reason,
             s.notes,
             s.created_at
         FROM pharmacy_sales s
-        WHERE ($whereSql)
+        WHERE ($whereSql) AND (s.status IS NULL OR s.status != 'CANCELLED')
         ORDER BY s.sale_id DESC
     ";
 
@@ -760,6 +783,16 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <span class="badge bg-light text-secondary border fw-semibold px-2 py-1" style="font-size: 0.76rem;">
                                         <?= htmlspecialchars($saleTypeLabel) ?>
                                     </span>
+                                    <?php if (stripos($sale['notes'] ?? '', 'EDITED') !== false): ?>
+                                        <span class="badge bg-warning text-dark border border-warning-subtle fw-bold px-2 py-1 shadow-2xs" style="font-size: 0.76rem;">
+                                            <i class="bi bi-pencil-square me-1"></i> EDITED BILL
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($sale['status'] === 'CANCELLED'): ?>
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold px-2 py-1 shadow-2xs" style="font-size: 0.76rem;">
+                                            <i class="bi bi-x-circle me-1"></i> CANCELLED / REPLACED
+                                        </span>
+                                    <?php endif; ?>
                                     <span class="text-muted small d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 0.80rem;">
                                         <i class="bi bi-calendar3 text-secondary"></i> <?= $formattedDateTime ?>
                                     </span>
@@ -774,11 +807,34 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <span class="badge-pill-status <?= $statusClass ?>">
                                         <?= strtoupper($sale['payment_status']) ?> (<?= htmlspecialchars($sale['payment_mode']) ?>)
                                     </span>
-                                    <a href="<?= BASE_URL ?>modules/sales/invoice.php?id=<?= $sale['sale_id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-bold shadow-2xs no-print" style="font-size: 0.78rem;">
-                                        <i class="bi bi-printer text-primary"></i> View / Print Invoice
+                                    <?php if ($sale['status'] !== 'CANCELLED'): ?>
+                                        <?php
+                                            $editTargetModule = ($sale['sale_type'] === 'IPD_SALE') ? 'regular.php' : 'counter.php';
+                                        ?>
+                                        <a href="<?= BASE_URL ?>modules/sales/<?= $editTargetModule ?>?edit_sale_id=<?= $sale['sale_id'] ?>" class="btn btn-sm btn-outline-warning text-dark rounded-pill px-3 py-1 fw-bold shadow-2xs no-print d-inline-flex align-items-center gap-1" style="font-size: 0.78rem; border-color: #f59e0b; background-color: #fffbeb;" title="View bill and edit medicines">
+                                            <i class="bi bi-pencil-square text-warning"></i> View / Edit Bill
+                                        </a>
+                                        <a href="<?= BASE_URL ?>modules/sales/returns.php?sale_id=<?= $sale['sale_id'] ?>" class="btn btn-sm btn-outline-danger text-danger rounded-pill px-3 py-1 fw-bold shadow-2xs no-print d-inline-flex align-items-center gap-1" style="font-size: 0.78rem; border-color: #fca5a5; background-color: #fef2f2;" title="Return medicines from this bill">
+                                            <i class="bi bi-arrow-return-left"></i> Return Medicine
+                                        </a>
+                                    <?php endif; ?>
+                                    <a href="<?= BASE_URL ?>modules/sales/invoice.php?id=<?= $sale['sale_id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-bold shadow-2xs no-print" style="font-size: 0.78rem;" title="Print official invoice">
+                                        <i class="bi bi-printer text-primary"></i> Print Invoice
                                     </a>
                                 </div>
                             </div>
+
+                            <?php if (!empty($sale['notes']) || !empty($sale['cancellation_reason'])): ?>
+                                <div class="px-3 py-1.5 border-bottom bg-warning-subtle text-dark small d-flex align-items-center gap-2 flex-wrap" style="font-size: 0.78rem;">
+                                    <i class="bi bi-info-circle-fill text-warning"></i>
+                                    <?php if (!empty($sale['notes'])): ?>
+                                        <span><strong>Bill Remark:</strong> <?= htmlspecialchars($sale['notes']) ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($sale['cancellation_reason'])): ?>
+                                        <span class="text-danger">&bull; <strong>Status Reason:</strong> <?= htmlspecialchars($sale['cancellation_reason']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="p-3">
                                 <!-- Financial Summary Strip for this Bill -->
@@ -860,6 +916,202 @@ include __DIR__ . '/../../includes/navbar.php';
         </div>
     <?php endif; ?>
 </div>
+
+<!-- 1-Month Bill Edit History & Comparative Snapshot Modal -->
+<div class="modal fade" id="billVersionHistoryModal" tabindex="-1" aria-labelledby="billVersionHistoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-dark text-white py-3 px-4">
+                <div class="d-flex align-items-center gap-2.5">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width: 36px; height: 36px; background: rgba(255,255,255,0.15);">
+                        <i class="bi bi-clock-history fs-5 text-info"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0" id="billVersionHistoryModalLabel">
+                            Bill Edit History &amp; 30-Day Audit Archive
+                        </h5>
+                        <div class="text-white-50 small" style="font-size: 0.78rem;">
+                            Historical medication versions retained in compliance with 1-month record policy
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light" id="billHistoryModalContent">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary mb-2" role="status"></div>
+                    <div class="text-muted small">Loading version history &amp; snapshot comparisons...</div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top py-2 px-4 d-flex justify-content-between">
+                <div class="small text-muted font-monospace" style="font-size: 0.75rem;">
+                    <i class="bi bi-shield-check text-success me-1"></i> Automatic 30-day retention store
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openBillVersionHistoryModal(saleId, saleNumber) {
+    const modalEl = document.getElementById('billVersionHistoryModal');
+    const contentEl = document.getElementById('billHistoryModalContent');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    
+    contentEl.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary mb-2" role="status"></div>
+            <div class="text-muted small">Loading 30-day archive for Bill #${saleNumber}...</div>
+        </div>
+    `;
+    modal.show();
+
+    fetch(`<?= BASE_URL ?>modules/patients/history.php?ajax_bill_history=1&sale_id=${saleId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success || !data.current_sale) {
+                contentEl.innerHTML = `
+                    <div class="alert alert-warning text-center p-4">
+                        <i class="bi bi-exclamation-triangle fs-3 d-block mb-2"></i>
+                        <strong>No historical edit versions found</strong>
+                        <div class="small text-muted mt-1">This bill has not been modified or past versions have exceeded the 30-day retention window.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            renderBillHistoryComparison(data.current_sale, data.history_versions || []);
+        })
+        .catch(err => {
+            contentEl.innerHTML = `
+                <div class="alert alert-danger text-center p-4">
+                    <i class="bi bi-x-circle fs-3 d-block mb-2"></i>
+                    <strong>Error loading history archive</strong>
+                    <div class="small text-muted mt-1">${err.message || 'Server communication error'}</div>
+                </div>
+            `;
+        });
+}
+
+function renderBillHistoryComparison(currSale, histories) {
+    const contentEl = document.getElementById('billHistoryModalContent');
+    
+    if (histories.length === 0) {
+        contentEl.innerHTML = `
+            <div class="card border rounded-3 p-4 text-center bg-white shadow-xs">
+                <i class="bi bi-info-circle fs-2 text-info d-block mb-2"></i>
+                <h6 class="fw-bold text-dark">Active Bill #${currSale.sale_number}</h6>
+                <p class="text-muted small mb-0">This bill was generated recently. Prior pre-edit snapshots are either archived or this is the first revision.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = `
+        <!-- Top Status Banner -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 bg-white p-3 rounded-3 border shadow-2xs">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-success text-white font-monospace px-2 py-1">CURRENT ACTIVE: ${escapeHtml(currSale.sale_number)}</span>
+                <span class="text-muted small">&bull; Total Versions Tracked: <strong>${histories.length + 1}</strong></span>
+            </div>
+            <div class="d-flex align-items-center gap-1.5 text-muted small">
+                <i class="bi bi-hourglass-split text-warning"></i>
+                <span>Retention: <strong class="text-dark">${histories[0].days_remaining !== undefined ? histories[0].days_remaining : 30} days</strong> remaining in active 1-month store</span>
+            </div>
+        </div>
+    `;
+
+    // Render Version Accordions
+    histories.forEach((h, idx) => {
+        const vDate = new Date(h.created_at).toLocaleString();
+        const expDate = new Date(h.retention_until).toLocaleDateString();
+        
+        html += `
+            <div class="card border rounded-3 mb-3 bg-white shadow-xs overflow-hidden">
+                <div class="card-header bg-warning-subtle border-bottom py-2.5 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-warning text-dark border border-warning-subtle fw-bold font-monospace px-2 py-1">
+                            PRE-EDIT SNAPSHOT (v${h.version_number})
+                        </span>
+                        <strong class="text-dark font-monospace" style="font-size: 0.88rem;">#${escapeHtml(h.original_sale_number)}</strong>
+                        <span class="text-muted small">&bull; Modified on: <strong>${vDate}</strong></span>
+                        ${h.edited_by_name ? `<span class="badge bg-light text-secondary border font-monospace" style="font-size: 0.70rem;"><i class="bi bi-person me-0.5"></i>${escapeHtml(h.edited_by_name)}</span>` : ''}
+                    </div>
+                    <div class="small text-muted font-monospace" style="font-size: 0.74rem;">
+                        Retained until: <strong>${expDate}</strong>
+                    </div>
+                </div>
+
+                <div class="card-body p-3">
+                    <!-- Financial Difference Summary -->
+                    <div class="row g-2 mb-3 text-center">
+                        <div class="col-sm-3 col-6">
+                            <div class="p-2 border rounded-2 bg-light">
+                                <div class="text-muted small" style="font-size: 0.70rem;">PRE-EDIT SUBTOTAL</div>
+                                <div class="fw-bold font-monospace">₹${parseFloat(h.subtotal_amount).toFixed(2)}</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-3 col-6">
+                            <div class="p-2 border rounded-2 bg-light">
+                                <div class="text-muted small" style="font-size: 0.70rem;">PRE-EDIT GST</div>
+                                <div class="fw-bold font-monospace">₹${parseFloat(h.gst_amount).toFixed(2)}</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-3 col-6">
+                            <div class="p-2 border rounded-2 bg-light">
+                                <div class="text-muted small" style="font-size: 0.70rem;">PRE-EDIT GRAND TOTAL</div>
+                                <div class="fw-bold text-danger font-monospace">₹${parseFloat(h.grand_total).toFixed(2)}</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-3 col-6">
+                            <div class="p-2 border rounded-2 bg-success-subtle text-dark border-success-subtle">
+                                <div class="text-muted small" style="font-size: 0.70rem;">CURRENT UPDATED TOTAL</div>
+                                <div class="fw-bold text-success font-monospace">₹${parseFloat(currSale.grand_total).toFixed(2)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Table Snapshot -->
+                    <div class="table-responsive border rounded-2">
+                        <table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.80rem;">
+                            <thead class="table-light small text-muted text-uppercase" style="font-size: 0.70rem;">
+                                <tr>
+                                    <th style="width: 35px;" class="text-center">#</th>
+                                    <th>MEDICINE / ITEM NAME</th>
+                                    <th>BATCH &amp; EXPIRY</th>
+                                    <th style="width: 70px;" class="text-center">PRE-QTY</th>
+                                    <th style="width: 90px;" class="text-end">UNIT RATE</th>
+                                    <th style="width: 95px;" class="text-end">LINE TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${(h.items || []).map((it, itIdx) => `
+                                    <tr>
+                                        <td class="text-center text-muted font-monospace">${itIdx + 1}</td>
+                                        <td>
+                                            <div class="fw-bold text-dark">${escapeHtml(it.medicine_name || 'Item #' + it.medicine_id)}</div>
+                                            ${it.composition ? `<div class="small text-muted" style="font-size: 0.68rem;">${escapeHtml(it.composition)}</div>` : ''}
+                                        </td>
+                                        <td class="font-monospace text-muted small" style="font-size: 0.72rem;">
+                                            ${escapeHtml(it.batch_number || 'GEN-01')} ${it.expiry_date ? '(' + escapeHtml(it.expiry_date) + ')' : ''}
+                                        </td>
+                                        <td class="text-center font-monospace fw-bold text-dark">${it.quantity}</td>
+                                        <td class="text-end font-monospace text-muted">₹${parseFloat(it.unit_price).toFixed(2)}</td>
+                                        <td class="text-end font-monospace fw-bold text-dark">₹${parseFloat(it.line_total).toFixed(2)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    contentEl.innerHTML = html;
+}
+</script>
 
 <?php
 include __DIR__ . '/../../includes/footer.php';

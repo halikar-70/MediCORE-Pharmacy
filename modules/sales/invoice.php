@@ -5,17 +5,75 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../config/session.php';
 require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../app/Services/AuditService.php';
 require_once __DIR__ . '/../../app/Services/SalesService.php';
 
 use Pharmacy\Services\SalesService;
+use Pharmacy\Services\AuditService;
 
 $salesService = new SalesService($pdo);
+$auditService = new AuditService($pdo);
 
 // -----------------------------------------------------------------------------
-// AJAX POST HANDLER: SAVE EDITED INVOICE DETAILS TO DATABASE
+// AJAX POST HANDLER: SAVE EDITED INVOICE DETAILS OR SETTLE REFUND
 // -----------------------------------------------------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_invoice_edits') {
-    header('Content-Type: application/json');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if ($_POST['action'] === 'settle_overpayment_refund') {
+        header('Content-Type: application/json');
+
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success' => false, 'message' => 'Invalid or expired security token.']);
+            exit;
+        }
+
+        if (!has_permission('pharmacy.sales.edit') && !has_permission('pharmacy.sales.create')) {
+            echo json_encode(['success' => false, 'message' => 'Permission denied: Cannot settle overpayment refund.']);
+            exit;
+        }
+
+        $saleId = (int)($_POST['sale_id'] ?? 0);
+        $refundAmount = (float)($_POST['refund_amount'] ?? 0.0);
+        $refundMode = trim($_POST['refund_mode'] ?? 'CASH');
+        $referenceNumber = trim($_POST['reference_number'] ?? '');
+        $refundNotes = trim($_POST['notes'] ?? '');
+
+        try {
+            $res = $salesService->settleOverpaymentRefund(
+                $saleId,
+                $refundAmount,
+                $refundMode,
+                $referenceNumber !== '' ? $referenceNumber : null,
+                $refundNotes,
+                $_SESSION['user_id'] ?? null
+            );
+
+            echo json_encode([
+                'success'        => true,
+                'message'        => 'Overpayment refund of ₹' . number_format($res['refund_amount'], 2) . ' settled successfully! Voucher #' . $res['refund_voucher'] . ' recorded.',
+                'refund_voucher' => $res['refund_voucher'],
+                'refund_amount'  => $res['refund_amount'],
+                'new_paid'       => $res['new_paid']
+            ]);
+            exit;
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            exit;
+        }
+    }
+
+    if ($_POST['action'] === 'save_invoice_edits') {
+        header('Content-Type: application/json');
+
+        if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success' => false, 'message' => 'Invalid or expired security token.']);
+            exit;
+        }
+
+    if (!has_permission('pharmacy.sales.edit') && !has_permission('pharmacy.sales.create')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: Cannot edit invoice.']);
+        exit;
+    }
+
     $saleId = (int)($_POST['sale_id'] ?? 0);
     if ($saleId <= 0) {
         echo json_encode(['success' => false, 'message' => 'Invalid sale ID specified.']);
@@ -23,6 +81,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     try {
+        $pdo->beginTransaction();
+
+        $origStmt = $pdo->prepare("SELECT * FROM pharmacy_sales WHERE sale_id = ? FOR UPDATE");
+        $origStmt->execute([$saleId]);
+        $origSale = $origStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$origSale) {
+            throw new Exception("Sale #{$saleId} not found.");
+        }
+        if ($origSale['status'] === 'CANCELLED') {
+            throw new Exception("Cannot edit a cancelled sale.");
+        }
+
         $patientName = trim($_POST['patient_name'] ?? '');
         $patientAddress = trim($_POST['patient_address'] ?? 'Kharadi, Pune');
         $doctorName = trim($_POST['doctor_name'] ?? 'Dr. Duty Doctor');
@@ -33,18 +103,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $saleDateRaw = trim($_POST['sale_date'] ?? date('Y-m-d'));
         $saleDate = date('Y-m-d', strtotime($saleDateRaw));
 
-        $discountAmount = (float)($_POST['discount_amount'] ?? 0.0);
-        $totalGross = (float)($_POST['total_gross'] ?? 0.0);
-        $totalGst = (float)($_POST['total_gst'] ?? 0.0);
+        $discountAmount = max(0.0, (float)($_POST['discount_amount'] ?? 0.0));
+        $totalGross = max(0.0, (float)($_POST['total_gross'] ?? 0.0));
+        $totalGst = max(0.0, (float)($_POST['total_gst'] ?? 0.0));
         $grandTotal = (float)($_POST['grand_total'] ?? 0.0);
         if ($grandTotal <= 0.0) {
-            $grandTotal = max(0.0, $totalGross + $totalGst - $discountAmount);
+            $grandTotal = max(0.0, round($totalGross + $totalGst - $discountAmount, 2));
+        }
+
+        // Preserve recorded payments: do NOT overwrite paid_amount with grand total
+        $originalPaid = (float)$origSale['paid_amount'];
+        $newBalance = max(0.00, round($grandTotal - $originalPaid, 2));
+        $newStatus = ($newBalance <= 0.01 && $originalPaid >= $grandTotal) ? 'PAID' : (($originalPaid > 0) ? 'PARTIALLY_PAID' : 'UNPAID');
+        $excessAmount = max(0.00, round($originalPaid - $grandTotal, 2));
+
+        $existingNotes = $origSale['notes'] ?? '';
+        $newNotes = $existingNotes;
+        if ($excessAmount > 0) {
+            $overpayTag = "[OVERPAYMENT_REFUND_DUE: ₹" . number_format($excessAmount, 2) . " (Paid ₹" . number_format($originalPaid, 2) . ", Total ₹" . number_format($grandTotal, 2) . ")]";
+            if (strpos($newNotes, 'OVERPAYMENT_REFUND_DUE') === false) {
+                $newNotes = trim($newNotes . ' ' . $overpayTag);
+            }
         }
 
         $itemsJson = $_POST['items_json'] ?? '[]';
         $items = json_decode($itemsJson, true) ?: [];
-
-        $pdo->beginTransaction();
 
         // 1. Update pharmacy_sales main record
         $updSale = $pdo->prepare("
@@ -59,8 +142,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 gst_amount = ?,
                 grand_total = ?,
                 paid_amount = ?,
-                balance_amount = 0.00,
+                balance_amount = ?,
+                payment_status = ?,
                 sale_date = ?,
+                notes = ?,
                 updated_at = NOW()
             WHERE sale_id = ?
         ");
@@ -74,8 +159,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $discountAmount,
             $totalGst,
             $grandTotal,
-            $grandTotal,
+            $originalPaid,
+            $newBalance,
+            $newStatus,
             $saleDate,
+            $newNotes,
             $saleId
         ]);
 
@@ -112,9 +200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $insBatch = $pdo->prepare("
                 INSERT INTO pharmacy_sale_item_batches (
-                    sale_item_id, batch_id, allocated_quantity, unit_price, gst_amount, line_total, created_at
+                    sale_item_id, batch_id, batch_number, expiry_date, allocated_quantity, unit_price, gst_amount, line_total, created_at
                 ) VALUES (
-                    ?, 0, ?, ?, ?, ?, NOW()
+                    ?, ?, ?, ?, ?, ?, ?, ?, NOW()
                 )
             ");
 
@@ -157,8 +245,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ]);
                 $newItemId = (int)$pdo->lastInsertId();
 
+                // Find batch for this medicine
+                $batchStmt = $pdo->prepare("SELECT batch_id, batch_number, expiry_date FROM medicine_batches WHERE medicine_id = ? AND status != 'Disposed' ORDER BY expiry_date ASC LIMIT 1");
+                $batchStmt->execute([$medId]);
+                $batchRow = $batchStmt->fetch(PDO::FETCH_ASSOC);
+
+                $batchId = $batchRow ? (int)$batchRow['batch_id'] : null;
+                $batchNo = $batchRow ? $batchRow['batch_number'] : 'GEN-01';
+                $expiryDate = $batchRow ? $batchRow['expiry_date'] : date('Y-12-31', strtotime('+1 year'));
+
                 $insBatch->execute([
                     $newItemId,
+                    $batchId,
+                    $batchNo,
+                    $expiryDate,
                     $qty,
                     $rate,
                     $lineGst,
@@ -167,11 +267,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
+        $auditService->logAction(
+            $_SESSION['user_id'] ?? 1,
+            'EDIT_INVOICE',
+            'pharmacy_sales',
+            (string)$saleId,
+            $origSale,
+            [
+                'grand_total'    => $grandTotal,
+                'paid_amount'    => $originalPaid,
+                'balance_amount' => $newBalance,
+                'excess_amount'  => $excessAmount,
+                'payment_status' => $newStatus
+            ]
+        );
+
         $pdo->commit();
 
+        $respMsg = 'Invoice #' . $saleId . ' details updated successfully!';
+        if ($excessAmount > 0) {
+            $respMsg .= ' Note: Customer excess payment of ₹' . number_format($excessAmount, 2) . ' recorded for refund/credit reconciliation.';
+        }
+
         echo json_encode([
-            'success' => true,
-            'message' => 'Invoice #' . $saleId . ' details updated successfully!'
+            'success'       => true,
+            'message'       => $respMsg,
+            'excess_amount' => $excessAmount
         ]);
         exit;
 
@@ -183,8 +304,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'success' => false,
             'message' => 'Failed to update invoice: ' . $e->getMessage()
         ]);
-        exit;
     }
+}
 }
 
 // -----------------------------------------------------------------------------
@@ -1158,7 +1279,15 @@ if ($grandTotal <= 0.0) {
                 <div class="ipd-banner-title">INPATIENT BILL OF SUPPLY - DETAIL</div>
                 <div class="ipd-divider"></div>
 
-                <div class="ipd-meta-grid" style="grid-template-columns: 55% 45%;">
+                <div class="ipd-meta-grid" style="grid-template-columns: 35% 35% 30%;">
+                    <div class="ipd-meta-item">
+                        <span class="ipd-meta-lbl">Bill No.</span>
+                        <span class="ipd-meta-val">: <strong><?= htmlspecialchars($billNo) ?></strong>
+                        <?php if (stripos($sale['notes'] ?? '', 'EDITED') !== false): ?>
+                            <span style="display: inline-block; background: #fef08a; color: #854d0e; border: 1px solid #facc15; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; margin-left: 4px;">EDITED</span>
+                        <?php endif; ?>
+                        </span>
+                    </div>
                     <div class="ipd-meta-item">
                         <span class="ipd-meta-lbl">Name</span>
                         <span class="ipd-meta-val">: <strong class="editable-field" id="ipdPatientName" data-field="patient_name"><?= strtoupper(htmlspecialchars($patientName)) ?></strong></span>
@@ -1267,15 +1396,15 @@ if ($grandTotal <= 0.0) {
                 <div class="header-box">
                     <div class="header-line">
                         <span class="header-label">Bill No.</span>
-                        <span class="header-val">: <strong>'CR' <?= htmlspecialchars($billNo) ?></strong></span>
+                        <span class="header-val">: <strong>'CR' <?= htmlspecialchars($billNo) ?></strong>
+                        <?php if (stripos($sale['notes'] ?? '', 'EDITED') !== false): ?>
+                            <span style="display: inline-block; background: #fef08a; color: #854d0e; border: 1px solid #facc15; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px; margin-left: 4px;">EDITED</span>
+                        <?php endif; ?>
+                        </span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">Date</span>
                         <span class="header-val">: <span class="editable-field" id="fieldBillDate" data-field="sale_date"><?= htmlspecialchars($billDate) ?></span></span>
-                    </div>
-                    <div class="header-line">
-                        <span class="header-label">Ward/Bed</span>
-                        <span class="header-val">: <span class="editable-field" id="fieldWardBed" data-field="ward_bed"><?= htmlspecialchars($wardName . ($bedNo ? ' / ' . $bedNo : '')) ?></span></span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">UHID</span>
@@ -1450,6 +1579,12 @@ if ($grandTotal <= 0.0) {
                         <span class="summary-label"><strong>Amount</strong></span>
                         <span class="summary-val" style="font-size: 11.5px;" id="lblGrandTotal">: <strong><?= number_format($grandTotal, 2) ?></strong></span>
                     </div>
+                    <?php if ((float)$sale['paid_amount'] > (float)$sale['grand_total']): ?>
+                    <div class="summary-line" style="color: #b45309; font-size: 10px; font-weight: 700;">
+                        <span class="summary-label">Paid (₹<?= number_format((float)$sale['paid_amount'], 2) ?>)</span>
+                        <span class="summary-val">: Excess ₹<?= number_format((float)$sale['paid_amount'] - (float)$sale['grand_total'], 2) ?></span>
+                    </div>
+                    <?php endif; ?>
                     <div class="page-no">Page No. : 1</div>
                 </div>
             </div>

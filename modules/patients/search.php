@@ -46,7 +46,7 @@ if (isset($_GET['ajax_search'])) {
                     (SELECT w.ward_name FROM admissions adm LEFT JOIN wards w ON adm.ward_id = w.ward_id WHERE adm.patient_id = p.patient_id AND adm.status = 'Admitted' ORDER BY adm.admission_id DESC LIMIT 1) as active_ward,
                     (SELECT b.bed_number FROM admissions adm LEFT JOIN beds b ON adm.bed_id = b.bed_id WHERE adm.patient_id = p.patient_id AND adm.status = 'Admitted' ORDER BY adm.admission_id DESC LIMIT 1) as active_bed
                 FROM patients p
-                WHERE (p.status IS NULL OR p.status = 'Active' OR p.status = 1)
+                WHERE (p.status IS NULL OR p.status = 'Active' OR p.status = 1) AND p.deleted_at IS NULL
             ";
 
             $params = [];

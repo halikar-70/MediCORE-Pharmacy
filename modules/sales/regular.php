@@ -21,6 +21,33 @@ $error = null;
 $success = null;
 $completedSale = null;
 
+// Load sale for editing if edit_sale_id is provided
+$editSaleId = (int)($_GET['edit_sale_id'] ?? $_GET['edit_id'] ?? 0);
+$editSale = null;
+$editSaleItems = [];
+if ($editSaleId > 0) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM pharmacy_sales WHERE sale_id = ?");
+        $stmt->execute([$editSaleId]);
+        $editSale = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($editSale) {
+            $stmtItems = $pdo->prepare("
+                SELECT si.*, m.medicine_name, m.generic_name, m.composition, m.hsn_code,
+                       m.dosage_form, m.strength, m.pack_size, m.barcode, m.gst_percent as med_gst,
+                       COALESCE((SELECT batch_number FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 'GEN-01') as batch_number,
+                       COALESCE((SELECT expiry_date FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), '') as expiry_date,
+                       COALESCE((SELECT batch_id FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 0) as batch_id,
+                       COALESCE((SELECT unit_cost FROM pharmacy_sale_item_batches WHERE sale_item_id = si.sale_item_id LIMIT 1), 0.00) as purchase_price
+                FROM pharmacy_sale_items si
+                JOIN medicines m ON si.medicine_id = m.medicine_id
+                WHERE si.sale_id = ?
+            ");
+            $stmtItems->execute([$editSaleId]);
+            $editSaleItems = $stmtItems->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $ex) {}
+}
+
 // AJAX Handler for Updating IPD Admission Type (e.g., Cashless <-> Normal / Paid)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_admission_type') {
     header('Content-Type: application/json');
@@ -38,16 +65,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     try {
         $hospitalPdo = \Pharmacy\Database\Database::getHospitalConnection();
+        $updatedRows = 0;
         if ($hospitalPdo) {
             if ($admissionId > 0) {
                 $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE admission_id = ?");
                 $upStmt->execute([$newType, $isMediclaim, $admissionId]);
+                $updatedRows = $upStmt->rowCount();
             } else if (!empty($ipdAdmissionNo)) {
                 $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE ipd_number = ?");
                 $upStmt->execute([$newType, $isMediclaim, $ipdAdmissionNo]);
+                $updatedRows = $upStmt->rowCount();
             } else if ($hospitalPatientId > 0) {
                 $upStmt = $hospitalPdo->prepare("UPDATE admissions SET admission_type = ?, is_mediclaim = ? WHERE patient_id = ? AND status = 'Admitted' ORDER BY admission_id DESC LIMIT 1");
                 $upStmt->execute([$newType, $isMediclaim, $hospitalPatientId]);
+                $updatedRows = $upStmt->rowCount();
             } else if (!empty($hospitalUhid)) {
                 $upStmt = $hospitalPdo->prepare("
                     UPDATE admissions a 
@@ -56,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     WHERE p.patient_code = ? AND a.status = 'Admitted'
                 ");
                 $upStmt->execute([$newType, $isMediclaim, $hospitalUhid]);
+                $updatedRows = $upStmt->rowCount();
             }
         }
 
@@ -63,7 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'success' => true,
             'message' => "Patient classification switched to {$newType} successfully!",
             'admission_type' => $newType,
-            'is_mediclaim' => $isMediclaim
+            'is_mediclaim' => $isMediclaim,
+            'rows_affected' => $updatedRows
         ]);
         exit;
     } catch (Exception $e) {
@@ -98,8 +131,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $seqSvc = new Pharmacy\Services\DocumentSequenceService($pdo);
         $newPatientNo = $seqSvc->generate('PATIENT_NO');
 
-        $uhid = 'VH-' . date('Y') . '-' . str_pad((string)rand(100, 9999), 4, '0', STR_PAD_LEFT);
-        $ipdNo = 'IPD/' . date('Y') . '/' . strtoupper(date('M')) . '/' . str_pad((string)rand(1, 99), 2, '0', STR_PAD_LEFT);
+        $uhidSeq = $seqSvc->generate('UHID', 'VH-' . date('Y') . '-');
+        $uhid = $uhidSeq;
+        $ipdSeq = $seqSvc->generate('IPD_ADM', 'IPD/' . date('Y') . '/' . strtoupper(date('M')) . '/');
+        $ipdNo = $ipdSeq;
 
         // Try inserting into hospital DB if connected
         $hospitalPatientId = null;
@@ -284,6 +319,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $discountPercent = min(50.0, $discountVal);
             }
 
+            $editingSaleId = (int)($_POST['editing_sale_id'] ?? 0);
+            $originalSaleNumber = trim($_POST['original_sale_number'] ?? '');
+            if ($editingSaleId > 0) {
+                $salesService->cancelSale($editingSaleId, "Superseded by edited bill (Replaced by edited invoice)", $_SESSION['user_id'] ?? null);
+                $cleanNotes = preg_replace('/\[EDITED:\s*Replaced Bill #[^\]]+\]\s*/i', '', $notes);
+                $editRemark = "[EDITED: Replaced Bill #{$originalSaleNumber}]";
+                $notes = $cleanNotes !== '' ? ($editRemark . ' ' . $cleanNotes) : $editRemark;
+            }
+
             $saleData = [
                 'sale_type'        => 'IPD_SALE',
                 'patient_id'       => $patientId,
@@ -315,7 +359,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $completedSale['admission_type'] = $admissionType;
             }
 
-            $success = "IPD Sale #{$completedSale['sale_number']} charged successfully to {$customerName}!";
+            if ($editingSaleId > 0 && !empty($completedSale['sale_id'])) {
+                $salesService->recordBillEditHistory($editingSaleId, (int)$completedSale['sale_id'], 'IPD Inpatient Medicines modified in POS', $_SESSION['user_id'] ?? null);
+            }
+
+            if ($editingSaleId > 0 && !empty($originalSaleNumber)) {
+                $success = "IPD Sale updated successfully! New edited Invoice #{$completedSale['sale_number']} generated (Replaced #{$originalSaleNumber}).";
+            } else {
+                $success = "IPD Sale #{$completedSale['sale_number']} charged successfully to {$customerName}!";
+            }
         } catch (Exception $e) {
             $error = $e->getMessage();
         }
@@ -1032,7 +1084,32 @@ include __DIR__ . '/../../includes/navbar.php';
     </div>
 
     <!-- VIEW 2: MEDICINE DISPENSING TAB (Shown when patient is selected) -->
-    <div id="ipdMedicineDispenseView" class="d-none">
+    <div id="ipdMedicineDispenseView" class="<?= $editSale ? '' : 'd-none' ?>">
+        <?php if ($editSale): ?>
+            <div class="alert alert-warning border-warning shadow-sm rounded-4 p-3.5 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-width: 2px !important;">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 shadow-xs" style="width: 44px; height: 44px; background: #fef08a; color: #854d0e; border: 1px solid #fde047;">
+                        <i class="ti ti-edit fs-3"></i>
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <h6 class="fw-bold text-dark mb-0 fs-6">Editing IPD Bill #<?= htmlspecialchars($editSale['sale_number']) ?></h6>
+                            <span class="badge bg-warning text-dark border border-warning-subtle fw-bold px-2 py-0.5" style="font-size: 0.72rem;">EDIT MODE ACTIVE</span>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            Patient: <strong><?= htmlspecialchars($editSale['customer_name']) ?></strong> &bull; Original Date: <?= htmlspecialchars(date('d-M-Y h:i A', strtotime($editSale['created_at']))) ?>.
+                            Modify medicines &amp; quantities below. Submitting will save the updated bill with an <strong>[EDITED]</strong> remark.
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="<?= BASE_URL ?>modules/patients/history.php?uhid=<?= urlencode($editSale['customer_name'] ?? '') ?>" class="btn btn-sm btn-outline-dark rounded-pill px-3 py-1.5 fw-semibold">
+                        <i class="ti ti-arrow-left me-1"></i> Cancel &amp; Return to History
+                    </a>
+                </div>
+            </div>
+        <?php endif; ?>
+
         <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
             <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div class="d-flex align-items-center gap-3">
@@ -1044,10 +1121,10 @@ include __DIR__ . '/../../includes/navbar.php';
                     </div>
                     <div>
                         <h4 class="fw-bold mb-0 text-dark" style="font-size: 1.28rem; letter-spacing: -0.2px;">
-                            IPD Medication Dispensing &amp; Billing
+                            <?= $editSale ? "Edit IPD Medicines &bull; Bill #{$editSale['sale_number']}" : 'IPD Medication Dispensing &amp; Billing' ?>
                         </h4>
                         <div class="text-muted small" style="font-size: 0.82rem;">
-                            Dispense pharmaceuticals with FEFO stock deduction and itemized hospital charge tracking.
+                            <?= $editSale ? 'Modify medicines, quantities, or pricing for this inpatient bill' : 'Dispense pharmaceuticals with FEFO stock deduction and itemized hospital charge tracking.' ?>
                         </div>
                     </div>
                 </div>
@@ -1067,6 +1144,10 @@ include __DIR__ . '/../../includes/navbar.php';
                     <input type="hidden" name="action" value="complete_ipd_sale">
                     <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
                     <input type="hidden" name="cart_items" id="cartItemsJson" value="[]">
+                    <?php if ($editSale): ?>
+                        <input type="hidden" name="editing_sale_id" value="<?= (int)$editSale['sale_id'] ?>">
+                        <input type="hidden" name="original_sale_number" value="<?= htmlspecialchars($editSale['sale_number']) ?>">
+                    <?php endif; ?>
 
                     <!-- Hidden inputs for patient details -->
                     <input type="hidden" name="patient_id" id="inpPatientId" value="">
@@ -4207,7 +4288,6 @@ function previewCurrentBill(format = 'standard') {
                 <div class="header-box">
                     <div class="header-line"><span class="header-label">Bill No.</span><span>: <strong>'CR' DRAFT-PREVIEW</strong></span></div>
                     <div class="header-line"><span class="header-label">Date</span><span>: ${billDate}</span></div>
-                    <div class="header-line"><span class="header-label">Ward/Bed</span><span>: ${wardBed.toUpperCase()}</span></div>
                     <div class="header-line"><span class="header-label">UHID</span><span>: ${patientUhid}</span></div>
                 </div>
                 <div class="header-box">
@@ -4441,6 +4521,59 @@ function submitFinalSale() {
 document.addEventListener('DOMContentLoaded', function() {
     renderAdmittedPatientsTable(ipdPatientsList);
 
+    <?php if ($editSale && !empty($editSaleItems)): ?>
+        // PRE-POPULATE IPD DATA FROM BILL BEING EDITED
+        const regView = document.getElementById('ipdRegistryTableView');
+        const medView = document.getElementById('ipdMedicineDispenseView');
+        if (regView) regView.classList.add('d-none');
+        if (medView) medView.classList.remove('d-none');
+
+        // Set inputs
+        if (document.getElementById('inpPatientId')) document.getElementById('inpPatientId').value = <?= json_encode($editSale['patient_id'] ?? '') ?>;
+        if (document.getElementById('inpPatientName')) document.getElementById('inpPatientName').value = <?= json_encode($editSale['customer_name'] ?? '') ?>;
+        if (document.getElementById('inpHospitalUhid')) document.getElementById('inpHospitalUhid').value = <?= json_encode($editSale['customer_mobile'] ?? '') ?>;
+        if (document.getElementById('inpIpdAdmissionNo')) document.getElementById('inpIpdAdmissionNo').value = <?= json_encode($editSale['ipd_admission_id'] ?? '') ?>;
+        if (document.getElementById('inpIpdWard')) document.getElementById('inpIpdWard').value = <?= json_encode($editSale['ipd_ward'] ?? '') ?>;
+        if (document.getElementById('inpIpdBed')) document.getElementById('inpIpdBed').value = <?= json_encode($editSale['ipd_bed'] ?? '') ?>;
+        if (document.getElementById('inpDoctorName')) document.getElementById('inpDoctorName').value = <?= json_encode($editSale['doctor_name'] ?? '') ?>;
+
+        // Display inputs
+        if (document.getElementById('cardPatientName')) document.getElementById('cardPatientName').textContent = <?= json_encode($editSale['customer_name'] ?? 'Inpatient') ?>;
+        if (document.getElementById('cardPatientAvatar')) document.getElementById('cardPatientAvatar').textContent = <?= json_encode(strtoupper(substr(trim($editSale['customer_name'] ?? 'P'), 0, 1))) ?>;
+        if (document.getElementById('cardPatientMeta')) document.getElementById('cardPatientMeta').textContent = `IPD #: <?= htmlspecialchars($editSale['ipd_admission_id'] ?? 'N/A') ?> • Ward: <?= htmlspecialchars($editSale['ipd_ward'] ?? '') ?> / <?= htmlspecialchars($editSale['ipd_bed'] ?? '') ?>`;
+        if (document.getElementById('displayIpdAdmissionNo')) document.getElementById('displayIpdAdmissionNo').value = <?= json_encode($editSale['ipd_admission_id'] ?? '') ?>;
+        if (document.getElementById('displayPatientUhid')) document.getElementById('displayPatientUhid').value = <?= json_encode($editSale['customer_name'] ?? '') ?>;
+        if (document.getElementById('displayIpdWardBed')) document.getElementById('displayIpdWardBed').value = <?= json_encode(trim(($editSale['ipd_ward'] ?? '') . ' / ' . ($editSale['ipd_bed'] ?? ''))) ?>;
+        if (document.getElementById('displayDoctorName')) document.getElementById('displayDoctorName').value = <?= json_encode($editSale['doctor_name'] ?? '') ?>;
+        if (document.getElementById('hiddenNotes')) document.getElementById('hiddenNotes').value = <?= json_encode($editSale['notes'] ?? '') ?>;
+
+        if (document.getElementById('hiddenDiscountPercent')) document.getElementById('hiddenDiscountPercent').value = <?= (float)$editSale['discount_percent'] ?>;
+        if (document.getElementById('hiddenDiscountValue')) document.getElementById('hiddenDiscountValue').value = <?= (float)$editSale['discount_amount'] ?>;
+
+        cart = <?= json_encode(array_map(function($it) {
+            return [
+                'medicine_id'     => (int)$it['medicine_id'],
+                'medicine_name'   => $it['medicine_name'],
+                'generic_name'    => $it['generic_name'] ?? '',
+                'composition'     => $it['composition'] ?? '',
+                'batch_id'        => (int)($it['batch_id'] ?? 0),
+                'batch_number'    => $it['batch_number'] ?? 'GEN-01',
+                'manufacturer'    => '',
+                'expiry_date'     => $it['expiry_date'] ?? '',
+                'purchase_price'  => (float)($it['purchase_price'] ?? 0),
+                'category'        => 'Medicine',
+                'unit'            => $it['dosage_form'] ?? 'unit',
+                'quantity'        => (int)$it['quantity'],
+                'price'           => (float)$it['unit_price'],
+                'max_stock'       => 999,
+                'gst_percent'     => (float)($it['gst_percent'] ?? $it['med_gst'] ?? 0)
+            ];
+        }, $editSaleItems), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+        renderCart();
+        showAutoAddNotice('Loaded <?= count($editSaleItems) ?> medicine(s) from IPD Bill #<?= htmlspecialchars($editSale['sale_number']) ?> for editing', 'success');
+    <?php endif; ?>
+
     // Close suggestions lists on click outside
     document.addEventListener('click', function(e) {
         const pList = document.getElementById('patientSuggestionsList');
@@ -4488,7 +4621,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Start with focus directly on Patient search input for seamless keyboard workflow
     setTimeout(function() {
         const pInput = document.getElementById('ipdPatientSearchInput');
-        if (pInput) {
+        if (pInput && !<?= $editSale ? 'true' : 'false' ?>) {
             pInput.focus();
             pInput.select();
         }

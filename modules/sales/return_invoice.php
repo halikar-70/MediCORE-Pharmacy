@@ -20,6 +20,17 @@ $returnService = new SalesReturnService($pdo);
 // -----------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_return_edits') {
     header('Content-Type: application/json');
+
+    if (!verify_csrf_token($_POST['csrf_token'] ?? '')) {
+        echo json_encode(['success' => false, 'message' => 'Invalid or expired security token.']);
+        exit;
+    }
+
+    if (!has_permission('pharmacy.sales_returns.edit') && !has_permission('pharmacy.sales_returns.create')) {
+        echo json_encode(['success' => false, 'message' => 'Permission denied: Cannot edit return invoice.']);
+        exit;
+    }
+
     $retId = (int)($_POST['return_id'] ?? 0);
     if ($retId <= 0) {
         echo json_encode(['success' => false, 'message' => 'Invalid return ID specified.']);
@@ -27,18 +38,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     try {
+        $pdo->beginTransaction();
+
+        $origRetStmt = $pdo->prepare("SELECT * FROM pharmacy_sales_returns WHERE return_id = ? FOR UPDATE");
+        $origRetStmt->execute([$retId]);
+        $origRet = $origRetStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$origRet) {
+            throw new Exception("Return record not found.");
+        }
+        if ($origRet['status'] === 'CANCELLED') {
+            throw new Exception("Cannot edit a cancelled return invoice.");
+        }
+
         $customerName = trim($_POST['customer_name'] ?? '');
         $returnDateRaw = trim($_POST['return_date'] ?? date('Y-m-d'));
         $returnDate = date('Y-m-d', strtotime($returnDateRaw));
         $paymentMode = trim($_POST['payment_mode'] ?? 'CASH');
         $reason = trim($_POST['reason'] ?? '');
-        $totalRefundAmount = (float)($_POST['total_refund_amount'] ?? 0.0);
         $itemsJson = $_POST['items_json'] ?? '[]';
         $items = json_decode($itemsJson, true) ?: [];
 
-        $pdo->beginTransaction();
+        // 1. Update line items and recalculate refund server-side
+        $updItem = $pdo->prepare("
+            UPDATE pharmacy_sales_return_items SET
+                return_quantity = ?,
+                unit_price = ?,
+                refund_amount = ?,
+                tax_percent = ?
+            WHERE item_id = ? AND return_id = ?
+        ");
 
-        // 1. Update pharmacy_sales_returns header
+        $itemCheckStmt = $pdo->prepare("
+            SELECT sri.*, si.quantity as original_sold_qty 
+            FROM pharmacy_sales_return_items sri
+            LEFT JOIN pharmacy_sale_items si ON sri.sale_item_id = si.sale_item_id
+            WHERE sri.item_id = ? AND sri.return_id = ?
+            FOR UPDATE
+        ");
+
+        $existingItemIds = [];
+        $existingItemsStmt = $pdo->prepare("SELECT item_id FROM pharmacy_sales_return_items WHERE return_id = ?");
+        $existingItemsStmt->execute([$retId]);
+        $allDbItemIds = $existingItemsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $calculatedTotalRefund = 0.00;
+
+        foreach ($items as $it) {
+            $itemId = (int)($it['item_id'] ?? 0);
+            $qty = max(1, (int)($it['return_quantity'] ?? 1));
+            $price = max(0.0, (float)($it['unit_price'] ?? 0.0));
+            $taxPct = max(0.0, (float)($it['tax_percent'] ?? 0.0));
+
+            if ($itemId > 0 && in_array($itemId, $allDbItemIds)) {
+                $itemCheckStmt->execute([$itemId, $retId]);
+                $dbItem = $itemCheckStmt->fetch(PDO::FETCH_ASSOC);
+                if ($dbItem && !empty($dbItem['original_sold_qty'])) {
+                    $origSold = (int)$dbItem['original_sold_qty'];
+                    if ($qty > $origSold) {
+                        throw new Exception("Return quantity ({$qty}) cannot exceed original sold quantity ({$origSold}).");
+                    }
+                }
+
+                $lineRefund = round($qty * $price, 2);
+                $calculatedTotalRefund += $lineRefund;
+
+                $existingItemIds[] = $itemId;
+                $updItem->execute([
+                    $qty,
+                    $price,
+                    $lineRefund,
+                    $taxPct,
+                    $itemId,
+                    $retId
+                ]);
+            }
+        }
+
+        // 2. Update pharmacy_sales_returns header
         $updReturn = $pdo->prepare("
             UPDATE pharmacy_sales_returns SET
                 customer_name = ?,
@@ -54,53 +130,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $returnDate,
             $paymentMode,
             $reason,
-            $totalRefundAmount,
+            $calculatedTotalRefund,
             $retId
         ]);
 
-        // 2. Update line items
-        $updItem = $pdo->prepare("
-            UPDATE pharmacy_sales_return_items SET
-                return_quantity = ?,
-                unit_price = ?,
-                refund_amount = ?,
-                tax_percent = ?
-            WHERE item_id = ? AND return_id = ?
-        ");
-
-        $delItem = $pdo->prepare("DELETE FROM pharmacy_sales_return_items WHERE item_id = ? AND return_id = ?");
-
-        $existingItemIds = [];
-        $existingItemsStmt = $pdo->prepare("SELECT item_id FROM pharmacy_sales_return_items WHERE return_id = ?");
-        $existingItemsStmt->execute([$retId]);
-        $allDbItemIds = $existingItemsStmt->fetchAll(PDO::FETCH_COLUMN);
-
-        foreach ($items as $it) {
-            $itemId = (int)($it['item_id'] ?? 0);
-            $qty = (int)($it['return_quantity'] ?? 1);
-            $price = (float)($it['unit_price'] ?? 0.0);
-            $refund = (float)($it['refund_amount'] ?? ($qty * $price));
-            $taxPct = (float)($it['tax_percent'] ?? 0.0);
-
-            if ($itemId > 0 && in_array($itemId, $allDbItemIds)) {
-                $existingItemIds[] = $itemId;
-                $updItem->execute([
-                    $qty,
-                    $price,
-                    $refund,
-                    $taxPct,
-                    $itemId,
-                    $retId
-                ]);
-            }
-        }
-
-        // Remove deleted items
-        foreach ($allDbItemIds as $dbId) {
-            if (!in_array($dbId, $existingItemIds)) {
-                $delItem->execute([$dbId, $retId]);
-            }
-        }
+        $auditSvc = new Pharmacy\Services\AuditService($pdo);
+        $auditSvc->logAction(
+            $_SESSION['user_id'] ?? 1,
+            'EDIT_SALES_RETURN',
+            'pharmacy_sales_returns',
+            (string)$retId,
+            $origRet,
+            ['total_refund_amount' => $calculatedTotalRefund, 'reason' => $reason]
+        );
 
         $pdo->commit();
 

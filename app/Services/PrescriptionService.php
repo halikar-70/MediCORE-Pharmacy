@@ -115,9 +115,8 @@ class PrescriptionService
 
         $this->pdo->beginTransaction();
         try {
-            // Generate prescription number (e.g. RX-000001)
-            $rxSeq = $this->seqService->generate('PATIENT');
-            $prescriptionNumber = 'RX-' . substr($rxSeq, 3);
+            // Generate dedicated prescription number (e.g. RX-000001)
+            $prescriptionNumber = $this->seqService->generate('PRESCRIPTION', 'RX-');
 
             $insRx = $this->pdo->prepare("
                 INSERT INTO pharmacy_prescriptions (

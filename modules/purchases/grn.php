@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $gsts = $_POST['item_gst_percent'] ?? [];
                 $shelves = $_POST['item_shelf_location'] ?? [];
                 $remarks = $_POST['item_remarks'] ?? [];
+                $compositions = $_POST['item_composition'] ?? [];
 
                 foreach ($medIds as $k => $mId) {
                     $mId = (int)$mId;
@@ -107,7 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'sale_price'       => (float)($sales[$k] ?? ($mrps[$k] ?? 0.00)),
                             'gst_percent'      => (float)($gsts[$k] ?? 0.00),
                             'shelf_location'   => !empty($shelves[$k]) ? trim($shelves[$k]) : null,
-                            'remarks'          => !empty($remarks[$k]) ? trim($remarks[$k]) : null
+                            'remarks'          => !empty($remarks[$k]) ? trim($remarks[$k]) : null,
+                            'composition'      => !empty($compositions[$k]) ? trim($compositions[$k]) : null
                         ];
                     }
                 }
@@ -580,16 +582,17 @@ include __DIR__ . '/../../includes/navbar.php';
                         <table class="table table-bordered table-sm align-middle" id="grnItemsTable">
                             <thead class="table-light small">
                                 <tr>
-                                    <th style="width: 20%;">Medicine *</th>
-                                    <th style="width: 12%;">Batch No *</th>
-                                    <th style="width: 10%;">Expiry *</th>
+                                    <th style="width: 18%;">Medicine *</th>
+                                    <th style="width: 11%;">Batch No *</th>
+                                    <th style="width: 9%;">Expiry *</th>
                                     <th style="width: 8%;" class="text-center">Recv Qty *</th>
-                                    <th style="width: 7%;" class="text-center">Rej Qty</th>
-                                    <th style="width: 7%;" class="text-center">Dam Qty</th>
+                                    <th style="width: 7%;" class="text-center">Scheme</th>
+                                    <th style="width: 6%;" class="text-center">Rej Qty</th>
+                                    <th style="width: 6%;" class="text-center">Dam Qty</th>
                                     <th style="width: 8%;" class="text-center">Accepted</th>
-                                    <th style="width: 10%;">Cost Rate (₹)</th>
+                                    <th style="width: 9%;">Cost Rate (₹)</th>
                                     <th style="width: 9%;">MRP (₹)</th>
-                                    <th style="width: 9%;">Shelf/Rack</th>
+                                    <th style="width: 7%;">Shelf/Rack</th>
                                     <th style="width: 3%;"></th>
                                 </tr>
                             </thead>
@@ -659,9 +662,11 @@ function addGrnRow(preset = null) {
 
     const poItemId = preset ? (preset.po_item_id || '') : '';
     const defQty = preset ? Math.max(1, (preset.requested_qty - (preset.received_qty || 0))) : 10;
+    const defScheme = preset ? parseInt(preset.free_qty || 0) : 0;
     const defRate = preset ? preset.purchase_rate : '0.00';
     const defMrp = preset ? preset.expected_mrp : '0.00';
     const defGst = preset ? preset.gst_percent : '0.00';
+    const initAccepted = Math.max(0, defQty + defScheme);
 
     row.innerHTML = `
         <td>
@@ -674,9 +679,10 @@ function addGrnRow(preset = null) {
         <td><input type="text" name="item_batch_number[]" class="form-control form-select-sm font-monospace text-uppercase" placeholder="BATCH123" required></td>
         <td><input type="date" name="item_expiry_date[]" class="form-control form-select-sm" required min="<?= date('Y-m-d') ?>"></td>
         <td><input type="number" name="item_received_qty[]" class="form-control form-select-sm text-center recv-input" min="1" value="${defQty}" required oninput="calcAccepted(this)"></td>
+        <td><input type="number" name="item_free_qty[]" class="form-control form-select-sm text-center scheme-input" min="0" value="${defScheme}" placeholder="0" title="Free / Scheme Quantity" oninput="calcAccepted(this)"></td>
         <td><input type="number" name="item_rejected_qty[]" class="form-control form-select-sm text-center rej-input" min="0" value="0" oninput="calcAccepted(this)"></td>
         <td><input type="number" name="item_damaged_qty[]" class="form-control form-select-sm text-center dam-input" min="0" value="0" oninput="calcAccepted(this)"></td>
-        <td class="text-center fw-bold text-success accepted-col">${defQty}</td>
+        <td class="text-center fw-bold text-success accepted-col">${initAccepted}</td>
         <td><input type="number" step="0.01" name="item_purchase_rate[]" class="form-control form-select-sm rate-input" value="${defRate}" required></td>
         <td><input type="number" step="0.01" name="item_mrp[]" class="form-control form-select-sm mrp-input" value="${defMrp}" required></td>
         <td><input type="text" name="item_shelf_location[]" class="form-control form-select-sm shelf-input" placeholder="Rack-A"></td>
@@ -701,9 +707,10 @@ function onGrnMedChange(select) {
 function calcAccepted(elem) {
     const row = elem.closest('tr');
     const recv = parseInt(row.querySelector('.recv-input').value) || 0;
+    const scheme = parseInt(row.querySelector('.scheme-input')?.value || 0) || 0;
     const rej = parseInt(row.querySelector('.rej-input').value) || 0;
     const dam = parseInt(row.querySelector('.dam-input').value) || 0;
-    const accepted = Math.max(0, recv - rej - dam);
+    const accepted = Math.max(0, (recv + scheme) - rej - dam);
     row.querySelector('.accepted-col').textContent = accepted;
 }
 

@@ -54,25 +54,37 @@ class SupplierPaymentService
             $processedAllocations = [];
 
             if (!empty($allocations)) {
+                // Consolidate duplicate invoice allocations
+                $consolidated = [];
+                foreach ($allocations as $alloc) {
+                    $invId = (int)($alloc['invoice_id'] ?? 0);
+                    $allocAmt = round((float)($alloc['allocated_amount'] ?? 0.00), 2);
+                    if ($invId <= 0 || $allocAmt <= 0) continue;
+                    if (!isset($consolidated[$invId])) {
+                        $consolidated[$invId] = 0.00;
+                    }
+                    $consolidated[$invId] = round($consolidated[$invId] + $allocAmt, 2);
+                }
+
                 $invStmt = $this->pdo->prepare("
                     SELECT invoice_id, supplier_id, invoice_number, grand_total, amount_paid, outstanding_amount, payment_status
                     FROM pharmacy_purchase_invoices
                     WHERE invoice_id = ? FOR UPDATE
                 ");
 
-                foreach ($allocations as $idx => $alloc) {
-                    $invId = (int)($alloc['invoice_id'] ?? 0);
-                    $allocAmt = round((float)($alloc['allocated_amount'] ?? 0.00), 2);
-                    if ($allocAmt <= 0) continue;
-
+                foreach ($consolidated as $invId => $allocAmt) {
                     $invStmt->execute([$invId]);
                     $inv = $invStmt->fetch(PDO::FETCH_ASSOC);
                     if (!$inv) {
-                        throw new InvalidArgumentException("Allocation #" . ($idx + 1) . ": Invoice ID {$invId} not found.");
+                        throw new InvalidArgumentException("Invoice ID {$invId} not found.");
                     }
 
                     if ((int)$inv['supplier_id'] !== $supplierId) {
                         throw new InvalidArgumentException("Invoice '{$inv['invoice_number']}' belongs to a different supplier.");
+                    }
+
+                    if (in_array($inv['payment_status'], ['CANCELLED', 'PAID'], true)) {
+                        throw new InvalidArgumentException("Cannot allocate payment to {$inv['payment_status']} invoice '{$inv['invoice_number']}'.");
                     }
 
                     $currentOutstanding = (float)$inv['outstanding_amount'];
@@ -169,18 +181,19 @@ class SupplierPaymentService
      */
     public function cancelPayment(int $paymentId, string $reason, int $userId): bool
     {
-        $stmt = $this->pdo->prepare("SELECT * FROM pharmacy_supplier_payments WHERE payment_id = ? FOR UPDATE");
-        $stmt->execute([$paymentId]);
-        $payment = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$payment) {
-            throw new InvalidArgumentException("Payment voucher not found.");
-        }
-        if ($payment['status'] === 'Cancelled') {
-            return true;
-        }
-
         $this->pdo->beginTransaction();
         try {
+            $stmt = $this->pdo->prepare("SELECT * FROM pharmacy_supplier_payments WHERE payment_id = ? FOR UPDATE");
+            $stmt->execute([$paymentId]);
+            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$payment) {
+                throw new InvalidArgumentException("Payment voucher not found.");
+            }
+            if ($payment['status'] === 'Cancelled') {
+                $this->pdo->commit();
+                return true;
+            }
+
             // Get allocations
             $allocStmt = $this->pdo->prepare("SELECT invoice_id, allocated_amount FROM pharmacy_supplier_payment_allocations WHERE payment_id = ?");
             $allocStmt->execute([$paymentId]);

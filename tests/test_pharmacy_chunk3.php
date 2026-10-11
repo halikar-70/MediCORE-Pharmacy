@@ -570,7 +570,7 @@ try {
             ]
         ], $testUserId);
     } catch (InvalidArgumentException $ex) {
-        if (stripos($ex->getMessage(), 'exceeds outstanding balance') !== false) {
+        if (stripos($ex->getMessage(), 'exceeds outstanding balance') !== false || stripos($ex->getMessage(), 'Cannot allocate payment to') !== false) {
             $overpayBlocked = true;
         }
     }
