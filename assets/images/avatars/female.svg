@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <defs>
+    <clipPath id="circleClipFem">
+      <circle cx="100" cy="100" r="96" />
+    </clipPath>
+  </defs>
+
+  <!-- Circular Peach/Cream Background -->
+  <circle cx="100" cy="100" r="96" fill="#F8DDD1" />
+
+  <g clip-path="url(#circleClipFem)">
+    <!-- Long Dark Hair Back (Flowing behind shoulders) -->
+    <path d="M 52 75 C 44 118 48 165 56 200 L 144 200 C 152 165 156 118 148 75 C 144 32 56 32 52 75 Z" fill="#37474F" />
+
+    <!-- Shoulders & Slate Tank Top -->
+    <path d="M 15 200 C 15 152 55 138 100 138 C 145 138 185 152 185 200 Z" fill="#3D4E5B" />
+
+    <!-- Scoop Neck Cutout -->
+    <path d="M 72 138 C 72 170 128 170 128 138 Z" fill="#F5C2A5" />
+
+    <!-- Neck -->
+    <path d="M 87 88 L 87 138 C 87 146 113 146 113 138 L 113 88 Z" fill="#F5C2A5" />
+    <!-- Under-Chin Shadow -->
+    <path d="M 87 95 C 93 111 107 111 113 95 L 113 106 C 107 118 93 118 87 106 Z" fill="#EAA88C" />
+
+    <!-- Ears -->
+    <ellipse cx="68" cy="90" rx="7" ry="11" fill="#F5C2A5" />
+    <ellipse cx="132" cy="90" rx="7" ry="11" fill="#F5C2A5" />
+
+    <!-- Slender Face / Oval Chin -->
+    <path d="M 70 78 C 70 54 82 42 100 42 C 118 42 130 54 130 78 C 130 100 122 116 112 122 C 105 126 95 126 88 122 C 78 116 70 100 70 78 Z" fill="#F5C2A5" />
+
+    <!-- Front Hair / Side Part & Curtains Framing Face -->
+    <path d="M 60 78 C 58 44 70 30 100 30 C 130 30 142 44 140 78 C 137 63 129 52 116 52 C 106 52 101 58 100 60 C 99 58 94 52 84 52 C 71 52 63 63 60 78 Z" fill="#2C3E50" />
+    
+    <!-- Left Hair Strand Falling in Front -->
+    <path d="M 60 78 C 58 105 64 142 74 172 C 68 142 62 105 66 78 Z" fill="#263238" />
+    <!-- Right Hair Strand Falling in Front -->
+    <path d="M 140 78 C 142 105 136 142 126 172 C 132 142 138 105 134 78 Z" fill="#263238" />
+  </g>
+</svg>

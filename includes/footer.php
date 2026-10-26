@@ -1,11 +1,13 @@
 <?php // includes/footer.php - Pharmacy System Layout Footer ?>
 </main>
-<footer class="bg-white border-top py-2.5 px-4 text-center text-muted small d-flex justify-content-center align-items-center flex-wrap gap-2" style="font-size: 0.76rem;">
-    <div>
-        <span>Developed &amp; Maintained by <a href="https://www.wtsindia.co.in/" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-semibold" style="color: var(--info);">WTS</a> &copy; 2026 All rights reserved.</span>
+<?php if (empty($hide_footer)): ?>
+<footer class="page-footer d-print-none d-flex justify-content-center align-items-center text-center">
+    <div class="d-flex align-items-center justify-content-center text-muted small mx-auto text-center">
+        <span>Developed &amp; Maintained by <a href="https://www.wtsindia.co.in/" target="_blank" rel="noopener noreferrer" class="text-decoration-none fw-bold" style="color: var(--primary-color, #0d6efd);">WTS</a> &copy; 2026 All rights reserved.</span>
     </div>
 </footer>
-</div><!-- /.main-container -->
+<?php endif; ?>
+</div><!-- /.content-wrapper / .main-container -->
 </div><!-- /.app-wrapper -->
 
 <!-- Global Clinical Toast Notification Container -->
@@ -36,7 +38,12 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="<?= BASE_URL ?>assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script>
+    window.BASE_URL = '<?= BASE_URL ?>';
+</script>
+<script src="<?= BASE_URL ?>assets/js/loading.js?v=<?= time() ?>"></script>
+<script src="<?= BASE_URL ?>assets/js/animations.js?v=<?= time() ?>"></script>
 <script src="<?= BASE_URL ?>assets/js/app.js?v=<?= time() ?>"></script>
 <script src="<?= BASE_URL ?>assets/js/searchable-select.js?v=<?= time() ?>"></script>
 <script src="<?= BASE_URL ?>assets/js/keyboard-navigation.js?v=<?= time() ?>"></script>

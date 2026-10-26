@@ -65,21 +65,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-history text-emerald me-2"></i>Stock Movement Ledger
-            </h4>
-            <p class="text-muted small mb-0">Immutable, append-only chronological ledger tracking every single pharmaceutical inward and outward delta.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="adjustments.php" class="btn btn-outline-warning rounded-pill px-3 py-2 small">
-                <i class="ti ti-adjustments me-1"></i> Stock Adjustment
-            </a>
-            <a href="batch_stock.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
-                <i class="ti ti-packages me-1"></i> Current Stock
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="adjustments.php" class="btn btn-outline-warning rounded-pill px-3 py-2 small">
+            <i class="ti ti-adjustments me-1"></i> Stock Adjustment
+        </a>
+        <a href="batch_stock.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
+            <i class="ti ti-packages me-1"></i> Current Stock
+        </a>
     </div>
 
     <!-- Filter Card -->

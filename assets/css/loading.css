@@ -1,0 +1,341 @@
+/**
+ * assets/css/loading.css
+ * MediPro HMS — Centralized Shimmer Skeleton Loading System
+ * High-performance, Accessible, Reduced-Motion & Print-Safe CSS
+ */
+
+:root {
+    --skeleton-base: #E8EDF5;
+    --skeleton-highlight: rgba(255, 255, 255, 0.75);
+    --skeleton-shimmer-bg: linear-gradient(
+        90deg,
+        rgba(232, 237, 245, 0) 0%,
+        rgba(255, 255, 255, 0.75) 50%,
+        rgba(232, 237, 245, 0) 100%
+    );
+    --skeleton-radius-sm: 6px;
+    --skeleton-radius-md: 10px;
+    --skeleton-radius-lg: 14px;
+    --skeleton-speed: 1.8s;
+}
+
+/* ==========================================================================
+   1. KEYFRAME ANIMATIONS
+   ========================================================================== */
+@keyframes medipro-shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+@keyframes medipro-nav-pulse {
+    0% {
+        opacity: 0.6;
+        width: 15%;
+    }
+    50% {
+        opacity: 1;
+        width: 70%;
+    }
+    100% {
+        opacity: 0.9;
+        width: 90%;
+    }
+}
+
+/* ==========================================================================
+   2. BASE SKELETON PRIMITIVES
+   ========================================================================== */
+.skeleton,
+.skeleton-text,
+.skeleton-heading,
+.skeleton-avatar,
+.skeleton-button,
+.skeleton-input,
+.skeleton-badge,
+.skeleton-card,
+.skeleton-cell,
+.skeleton-chart-bar,
+.skeleton-kpi {
+    position: relative;
+    background-color: var(--skeleton-base);
+    background-image: var(--skeleton-shimmer-bg);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: medipro-shimmer var(--skeleton-speed) ease-in-out infinite;
+    display: inline-block;
+    color: transparent !important;
+    user-select: none !important;
+    pointer-events: none !important;
+    border-color: transparent !important;
+}
+
+/* Structural block */
+.skeleton {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--skeleton-radius-sm);
+}
+
+/* Typography Skeletons */
+.skeleton-text {
+    width: 100%;
+    height: 0.85rem;
+    margin-bottom: 0.45rem;
+    border-radius: 4px;
+    display: block;
+}
+
+.skeleton-text.w-75 { width: 75% !important; }
+.skeleton-text.w-50 { width: 50% !important; }
+.skeleton-text.w-25 { width: 25% !important; }
+.skeleton-text.w-90 { width: 90% !important; }
+
+.skeleton-heading {
+    width: 60%;
+    height: 1.35rem;
+    margin-bottom: 0.75rem;
+    border-radius: 6px;
+    display: block;
+}
+
+.skeleton-heading.h-lg {
+    height: 1.8rem;
+    width: 45%;
+}
+
+/* Avatar / Circle Skeletons */
+.skeleton-avatar {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.skeleton-avatar.avatar-sm {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.skeleton-avatar.avatar-lg {
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    min-height: 64px;
+}
+
+/* Form & Action Skeletons */
+.skeleton-button {
+    height: 34px;
+    width: 100px;
+    border-radius: var(--skeleton-radius-sm);
+    display: inline-block;
+}
+
+.skeleton-input {
+    height: 34px;
+    width: 100%;
+    border-radius: var(--skeleton-radius-sm);
+    display: block;
+}
+
+.skeleton-badge {
+    height: 20px;
+    width: 60px;
+    border-radius: 999px;
+    display: inline-block;
+}
+
+/* ==========================================================================
+   3. COMPOSITE SKELETON CONTAINERS (CARD, KPI, TABLE, CHART)
+   ========================================================================== */
+
+/* Wrapper with Accessibility attribute */
+.skeleton-wrapper[aria-busy="true"] {
+    position: relative;
+    pointer-events: none;
+}
+
+/* Skeleton KPI Card */
+.skeleton-kpi-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: var(--skeleton-radius-lg);
+    padding: 16px;
+    box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.04);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.skeleton-kpi-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+/* Skeleton Card */
+.skeleton-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: var(--skeleton-radius-lg);
+    padding: 18px;
+    box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.04);
+    height: 100%;
+    display: block;
+}
+
+/* Skeleton Table */
+.skeleton-table-wrap {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: var(--skeleton-radius-md);
+    overflow: hidden;
+    width: 100%;
+}
+
+.skeleton-table-header {
+    background: #F8FAFC;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.skeleton-table-row {
+    padding: 12px 14px;
+    border-bottom: 1px solid #F1F5F9;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.skeleton-table-row:last-child {
+    border-bottom: none;
+}
+
+.skeleton-cell {
+    height: 14px;
+    border-radius: 4px;
+    flex: 1;
+}
+
+/* Skeleton Chart */
+.skeleton-chart-box {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: var(--skeleton-radius-lg);
+    padding: 18px;
+    height: 240px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.skeleton-chart-bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    height: 150px;
+    padding-top: 10px;
+}
+
+.skeleton-chart-bar {
+    width: 28px;
+    border-radius: 4px 4px 0 0;
+}
+
+/* ==========================================================================
+   4. NAVIGATION PROGRESS BAR
+   ========================================================================== */
+.medipro-nav-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    z-index: 99999;
+    pointer-events: none;
+    background: linear-gradient(90deg, #14B8A6 0%, #06B6D4 50%, #3B82F6 100%);
+    box-shadow: 0 1px 6px rgba(20, 184, 166, 0.4);
+    transition: width 0.25s ease-out, opacity 0.3s ease;
+    width: 0%;
+    opacity: 0;
+}
+
+.medipro-nav-progress.active {
+    opacity: 1;
+    animation: medipro-nav-pulse 2s ease-in-out infinite alternate;
+}
+
+.medipro-nav-progress.done {
+    width: 100% !important;
+    opacity: 0;
+    transition: width 0.15s ease, opacity 0.3s ease 0.15s;
+}
+
+/* ==========================================================================
+   5. BUTTON & INLINE LOADING HELPERS
+   ========================================================================== */
+.btn.is-loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.85;
+}
+
+/* ==========================================================================
+   6. REDUCED MOTION (MANDATORY ACCESSIBILITY)
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    .skeleton,
+    .skeleton-text,
+    .skeleton-heading,
+    .skeleton-avatar,
+    .skeleton-button,
+    .skeleton-input,
+    .skeleton-badge,
+    .skeleton-card,
+    .skeleton-cell,
+    .skeleton-chart-bar,
+    .skeleton-kpi,
+    .medipro-nav-progress {
+        animation: none !important;
+        background-image: none !important;
+        background-color: var(--skeleton-base, #E8EDF5) !important;
+    }
+}
+
+/* ==========================================================================
+   7. PRINT ISOLATION (MANDATORY PRINT PROTECTION)
+   ========================================================================== */
+@media print {
+    .skeleton,
+    .skeleton-text,
+    .skeleton-heading,
+    .skeleton-avatar,
+    .skeleton-button,
+    .skeleton-input,
+    .skeleton-badge,
+    .skeleton-card,
+    .skeleton-cell,
+    .skeleton-chart-bar,
+    .skeleton-kpi,
+    .skeleton-wrapper,
+    .skeleton-table-wrap,
+    .medipro-nav-progress,
+    [aria-busy="true"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+}

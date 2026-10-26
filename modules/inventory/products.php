@@ -56,22 +56,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Top Action Bar -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-pill text-emerald me-2"></i>Medicine Master
-            </h4>
-            <p class="text-muted small mb-0">Pharmaceutical catalog, compositions, dosage strengths, and regulatory classifications.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="opening_stock.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
-                <i class="ti ti-box-seam me-1"></i> Opening Stock
-            </a>
-            <a href="add.php" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;">
-                <i class="ti ti-plus me-1"></i> Add New Medicine
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2">
+        <a href="opening_stock.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
+            <i class="ti ti-box-seam me-1"></i> Opening Stock
+        </a>
+        <a href="add.php" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;">
+            <i class="ti ti-plus me-1"></i> Add New Medicine
+        </a>
     </div>
 
     <!-- Quick Stats Metric Cards -->

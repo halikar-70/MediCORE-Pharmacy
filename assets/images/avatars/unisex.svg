@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <defs>
+    <clipPath id="circleClipUni">
+      <circle cx="100" cy="100" r="96" />
+    </clipPath>
+  </defs>
+
+  <!-- Circular Peach/Cream Background -->
+  <circle cx="100" cy="100" r="96" fill="#F8DDD1" />
+
+  <g clip-path="url(#circleClipUni)">
+    <circle cx="100" cy="78" r="32" fill="#0D9488" />
+    <path d="M 40 190 C 40 145 68 130 100 130 C 132 130 160 145 160 190 Z" fill="#0D9488" />
+  </g>
+</svg>

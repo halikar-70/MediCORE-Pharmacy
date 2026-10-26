@@ -141,16 +141,10 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="w-100">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h4 class="fw-bold mb-0 text-dark"><i class="ti ti-chart-dots me-2 text-emerald"></i>Sales Monitoring Registry</h4>
-            <span class="text-muted small">Real-time sales invoices, payments, batch allocation traceability, and returns</span>
-        </div>
-        <div>
-            <a href="counter.php" class="btn btn-emerald text-white fw-bold shadow-sm">
-                <i class="ti ti-plus me-1"></i>New OPD Sale
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3">
+        <a href="counter.php" class="btn btn-emerald text-white fw-bold shadow-sm">
+            <i class="ti ti-plus me-1"></i>New OPD Sale
+        </a>
     </div>
 
     <?php if ($error): ?>

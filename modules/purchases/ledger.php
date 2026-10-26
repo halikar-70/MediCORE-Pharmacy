@@ -122,24 +122,15 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header bar -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-book-2 text-emerald me-2"></i>Supplier Financial Ledger
-            </h4>
-            <p class="text-muted small mb-0">Double-entry verified audit trail of purchases (Debits), payments (Credits), and running creditor balances.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="outstanding.php" class="btn btn-outline-danger rounded-pill px-3 py-2 small">
-                <i class="ti ti-building-bank me-1"></i> Outstanding Aging
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="outstanding.php" class="btn btn-outline-danger rounded-pill px-3 py-2 small">
+            <i class="ti ti-building-bank me-1"></i> Outstanding Aging
+        </a>
+        <?php if ($ledgerData): ?>
+            <a href="ledger.php?supplier_id=<?= $supplierId ?>&print=1" target="_blank" class="btn btn-outline-dark rounded-pill px-3 py-2 small">
+                <i class="ti ti-printer me-1"></i> Print Statement
             </a>
-            <?php if ($ledgerData): ?>
-                <a href="ledger.php?supplier_id=<?= $supplierId ?>&print=1" target="_blank" class="btn btn-outline-dark rounded-pill px-3 py-2 small">
-                    <i class="ti ti-printer me-1"></i> Print Statement
-                </a>
-            <?php endif; ?>
-        </div>
+        <?php endif; ?>
     </div>
 
     <!-- Supplier Selector Card -->

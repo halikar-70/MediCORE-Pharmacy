@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <defs>
+    <clipPath id="circleClipMale">
+      <circle cx="100" cy="100" r="96" />
+    </clipPath>
+  </defs>
+
+  <!-- Circular Peach/Cream Background -->
+  <circle cx="100" cy="100" r="96" fill="#F8DDD1" />
+
+  <g clip-path="url(#circleClipMale)">
+    <!-- Cyan Polo / Shirt -->
+    <path d="M 15 200 C 15 148 55 134 100 134 C 145 134 185 148 185 200 Z" fill="#81DFD3" />
+    
+    <!-- Inner Neck Cutout -->
+    <path d="M 86 134 L 100 155 L 114 134 Z" fill="#F5C2A5" />
+
+    <!-- Center Placket Slit -->
+    <path d="M 99 155 L 99 178 L 101 178 L 101 155 Z" fill="#47C2B2" />
+
+    <!-- Left & Right Collar Flaps -->
+    <path d="M 80 134 L 98 165 L 70 148 Z" fill="#90E6DC" stroke="#48C3B3" stroke-width="1.5" stroke-linejoin="round" />
+    <path d="M 120 134 L 102 165 L 130 148 Z" fill="#90E6DC" stroke="#48C3B3" stroke-width="1.5" stroke-linejoin="round" />
+
+    <!-- Neck -->
+    <path d="M 84 92 L 84 134 C 84 142 116 142 116 134 L 116 92 Z" fill="#F5C2A5" />
+    <!-- Neck / Under-Chin Shadow -->
+    <path d="M 84 98 C 92 116 108 116 116 98 L 116 110 C 108 122 92 122 84 110 Z" fill="#EAA88C" />
+
+    <!-- Ears -->
+    <ellipse cx="61" cy="90" rx="9" ry="14" fill="#F5C2A5" />
+    <ellipse cx="139" cy="90" rx="9" ry="14" fill="#F5C2A5" />
+
+    <!-- Face (Clean Masculine Jaw) -->
+    <path d="M 66 80 C 66 58 76 46 100 46 C 124 46 134 58 134 80 C 134 102 126 117 114 123 C 105 127 95 127 86 123 C 74 117 66 102 66 80 Z" fill="#F5C2A5" />
+
+    <!-- Hair Back/Sideburns Behind Ears -->
+    <path d="M 62 82 C 59 82 58 70 63 56 L 68 54 C 64 65 64 75 62 82 Z" fill="#5A3E36" />
+    <path d="M 138 82 C 141 82 142 70 137 56 L 132 54 C 136 65 136 75 138 82 Z" fill="#5A3E36" />
+
+    <!-- Hair (Modern Wavy Textured Quiff on Top) -->
+    <path d="M 62 66 C 58 48 64 34 76 26 C 82 17 96 16 106 22 C 116 16 128 19 133 28 C 143 36 142 50 138 66 C 134 55 127 50 119 54 C 107 43 85 43 77 56 C 72 52 66 56 62 66 Z" fill="#5A3E36" />
+    <!-- Hair Texture / Waves -->
+    <path d="M 80 25 C 87 18 97 18 105 24" stroke="#462F29" stroke-width="2.5" stroke-linecap="round" fill="none" />
+    <path d="M 106 22 C 114 18 124 21 130 28" stroke="#462F29" stroke-width="2.5" stroke-linecap="round" fill="none" />
+    <path d="M 72 38 C 80 30 92 28 102 32" stroke="#462F29" stroke-width="2" stroke-linecap="round" fill="none" />
+    <path d="M 104 32 C 112 30 124 33 130 40" stroke="#462F29" stroke-width="2" stroke-linecap="round" fill="none" />
+  </g>
+</svg>

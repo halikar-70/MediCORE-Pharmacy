@@ -26,12 +26,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
 
-<div class="mb-4">
-    <h4 class="fw-bold mb-1 text-dark">
-        <i class="ti ti-key text-emerald me-1.5"></i> Roles &amp; Permission Architecture
-    </h4>
-    <p class="text-muted small mb-0">Role-based access control matrix governing pharmacy permissions.</p>
-</div>
+
 
 <div class="row g-4">
     <div class="col-lg-6">

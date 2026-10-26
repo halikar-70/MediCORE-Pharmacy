@@ -228,16 +228,10 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h4 class="fw-bold mb-0 text-dark"><i class="ti ti-clipboard-list me-2 text-emerald"></i>IPD Ward Requisitions (Indents)</h4>
-            <span class="text-muted small">Fulfill inpatient ward medication demands and deduct pharmacy inventory via FEFO</span>
-        </div>
-        <div>
-            <button type="button" class="btn btn-emerald text-white fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#newIndentModal">
-                <i class="ti ti-plus me-1"></i>New Ward Indent
-            </button>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3">
+        <button type="button" class="btn btn-emerald text-white fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#newIndentModal">
+            <i class="ti ti-plus me-1"></i>New Ward Indent
+        </button>
     </div>
 
     <?php if ($error): ?>

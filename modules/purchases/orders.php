@@ -907,24 +907,15 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header bar -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-file-text text-emerald me-2"></i>Purchase Orders
-            </h4>
-            <p class="text-muted small mb-0">Procurement orders, vendor approval workflows, and delivery fulfillment tracking.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="grn.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
-                <i class="ti ti-truck-loading me-1"></i> Receive Goods (GRN)
-            </a>
-            <?php if ($canCreate): ?>
-                <button type="button" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;" data-bs-toggle="modal" data-bs-target="#createPoModal">
-                    <i class="ti ti-plus me-1"></i> Create Purchase Order
-                </button>
-            <?php endif; ?>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="grn.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
+            <i class="ti ti-truck-loading me-1"></i> Receive Goods (GRN)
+        </a>
+        <?php if ($canCreate): ?>
+            <button type="button" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;" data-bs-toggle="modal" data-bs-target="#createPoModal">
+                <i class="ti ti-plus me-1"></i> Create Purchase Order
+            </button>
+        <?php endif; ?>
     </div>
 
     <?php if ($feedback): ?>

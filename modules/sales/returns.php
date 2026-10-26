@@ -211,22 +211,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-arrow-back-up text-primary me-2"></i>Sales Returns & Restock Management
-            </h4>
-            <p class="text-muted small mb-0">Patient & customer medicine returns, batch-specific triage, and restocking controls.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-primary rounded-pill px-3 py-2 small shadow-sm" data-bs-toggle="modal" data-bs-target="#modalNewReturn">
-                <i class="ti ti-plus me-1"></i> New Sales Return
-            </button>
-            <a href="monitoring.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
-                <i class="ti ti-receipt me-1"></i> Sales Register
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2">
+        <button type="button" class="btn btn-primary rounded-pill px-3 py-2 small shadow-sm" data-bs-toggle="modal" data-bs-target="#modalNewReturn">
+            <i class="ti ti-plus me-1"></i> New Sales Return
+        </button>
+        <a href="monitoring.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
+            <i class="ti ti-receipt me-1"></i> Sales Register
+        </a>
     </div>
 
     <?php if (!empty($errors)): ?>

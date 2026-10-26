@@ -50,20 +50,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h4 class="fw-bold mb-1"><i class="ti ti-vaccine text-emerald me-2"></i>Clinical Dispensing Records</h4>
-            <p class="text-muted small mb-0">Traceable audit of all physical medication dispensing events with batch numbers and expiry dates.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="<?= BASE_URL ?>modules/ipd/queue.php" class="btn btn-emerald btn-sm text-white">
-                <i class="ti ti-inbox me-1"></i>Dispensing Queue
-            </a>
-            <a href="<?= BASE_URL ?>modules/reports/batch_traceability.php" class="btn btn-outline-secondary btn-sm">
-                <i class="ti ti-search me-1"></i>Batch Traceability Report
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2">
+        <a href="<?= BASE_URL ?>modules/ipd/queue.php" class="btn btn-emerald btn-sm text-white">
+            <i class="ti ti-inbox me-1"></i>Dispensing Queue
+        </a>
+        <a href="<?= BASE_URL ?>modules/reports/batch_traceability.php" class="btn btn-outline-secondary btn-sm">
+            <i class="ti ti-search me-1"></i>Batch Traceability Report
+        </a>
     </div>
 
     <!-- Filter Card -->
@@ -174,7 +167,7 @@ include __DIR__ . '/../../includes/navbar.php';
 
 <!-- Dispensing Record Details Modal -->
 <?php if ($selectedDisp): ?>
-<div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+<div class="modal fade show d-block" id="dispensingSlipModal" tabindex="-1" style="background: rgba(0,0,0,0.5);">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-emerald text-white">

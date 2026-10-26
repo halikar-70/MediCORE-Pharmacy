@@ -3,6 +3,11 @@
 
 namespace Pharmacy\Services;
 
+require_once __DIR__ . '/DocumentSequenceService.php';
+require_once __DIR__ . '/AuditService.php';
+require_once __DIR__ . '/../Integrations/HospitalIntegrationInterface.php';
+require_once __DIR__ . '/../Integrations/HospitalIntegrationService.php';
+
 use Pharmacy\Integrations\HospitalIntegrationInterface;
 use Pharmacy\Integrations\HospitalIntegrationService;
 use PDO;
@@ -11,6 +16,7 @@ use Exception;
 class PatientService
 {
     private PDO $pdo;
+    private ?PDO $hospitalPdo;
     private DocumentSequenceService $sequenceService;
     private AuditService $auditService;
     private HospitalIntegrationInterface $hospitalIntegration;
@@ -19,9 +25,11 @@ class PatientService
         PDO $pdo,
         ?DocumentSequenceService $sequenceService = null,
         ?AuditService $auditService = null,
-        ?HospitalIntegrationInterface $hospitalIntegration = null
+        ?HospitalIntegrationInterface $hospitalIntegration = null,
+        ?PDO $hospitalPdo = null
     ) {
         $this->pdo = $pdo;
+        $this->hospitalPdo = $hospitalPdo ?: \Pharmacy\Database\Database::getHospitalConnection();
         $this->sequenceService = $sequenceService ?: new DocumentSequenceService($pdo);
         $this->auditService = $auditService ?: new AuditService($pdo);
         $this->hospitalIntegration = $hospitalIntegration ?: new HospitalIntegrationService();
@@ -90,6 +98,66 @@ class PatientService
         $hospitalPatientId = !empty($data['hospital_patient_id']) ? (int)$data['hospital_patient_id'] : null;
         $hospitalUhid = !empty($data['hospital_uhid']) ? trim($data['hospital_uhid']) : null;
         $doctorId = !empty($data['doctor_id']) ? (int)$data['doctor_id'] : null;
+
+        // Bidirectional Interdependence: Auto-sync / find customer in Hospital directory
+        $hospConn = $this->hospitalPdo;
+        if (!$hospitalPatientId && $hospConn) {
+            try {
+                if ($hospitalUhid) {
+                    $chkUhid = $hospConn->prepare("SELECT patient_id, patient_code FROM patients WHERE patient_code = ? AND deleted_at IS NULL LIMIT 1");
+                    $chkUhid->execute([$hospitalUhid]);
+                    $hMatch = $chkUhid->fetch(PDO::FETCH_ASSOC);
+                    if ($hMatch) {
+                        $hospitalPatientId = (int)$hMatch['patient_id'];
+                        $hospitalUhid = $hMatch['patient_code'];
+                    }
+                }
+                if (!$hospitalPatientId && $mobile !== '') {
+                    $chkMob = $hospConn->prepare("SELECT patient_id, patient_code FROM patients WHERE phone = ? AND deleted_at IS NULL LIMIT 1");
+                    $chkMob->execute([$mobile]);
+                    $hMatch = $chkMob->fetch(PDO::FETCH_ASSOC);
+                    if ($hMatch) {
+                        $hospitalPatientId = (int)$hMatch['patient_id'];
+                        $hospitalUhid = $hMatch['patient_code'] ?: ('VH' . str_pad((string)$hospitalPatientId, 4, '0', STR_PAD_LEFT));
+                    }
+                }
+
+                // If not yet existing in hospital, automatically register into Hospital MediPro patients table
+                if (!$hospitalPatientId) {
+                    $nameParts = explode(' ', $name, 2);
+                    $firstName = trim($nameParts[0]);
+                    $lastName = trim($nameParts[1] ?? '');
+                    if ($lastName === '') {
+                        $lastName = 'Customer';
+                    }
+
+                    if (empty($hospitalUhid)) {
+                        $maxPatId = (int)$hospConn->query("SELECT MAX(patient_id) FROM patients")->fetchColumn();
+                        $nextId = $maxPatId + 1;
+                        $hospitalUhid = 'VH-' . date('Y') . '-' . str_pad((string)$nextId, 4, '0', STR_PAD_LEFT);
+                    }
+
+                    $insHosp = $hospConn->prepare("
+                        INSERT INTO patients 
+                            (patient_code, first_name, last_name, phone, gender, dob, address, city, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', NOW(), NOW())
+                    ");
+                    $insHosp->execute([
+                        $hospitalUhid,
+                        $firstName,
+                        $lastName,
+                        $mobile ?: null,
+                        $gender,
+                        $dob,
+                        $address ?: null,
+                        $city ?: 'Daund'
+                    ]);
+                    $hospitalPatientId = (int)$hospConn->lastInsertId();
+                }
+            } catch (Exception $e) {
+                error_log("PatientService Hospital Sync Note: " . $e->getMessage());
+            }
+        }
 
         // Generate unique atomic sequence number
         $patientNo = $this->sequenceService->getNextNumber('PATIENT');
@@ -196,6 +264,40 @@ class PatientService
             $doctorId,
             $id
         ]);
+
+        // Bidirectional Interdependence: Sync updated demographic info into Hospital MediPro patients
+        $hospConn = $this->hospitalPdo;
+        if ($hospitalPatientId && $hospConn) {
+            try {
+                $nameParts = explode(' ', $name, 2);
+                $firstName = trim($nameParts[0]);
+                $lastName = trim($nameParts[1] ?? '');
+                $updHosp = $hospConn->prepare("
+                    UPDATE patients SET
+                        first_name = ?,
+                        last_name = ?,
+                        phone = ?,
+                        gender = ?,
+                        dob = ?,
+                        address = ?,
+                        city = ?,
+                        updated_at = NOW()
+                    WHERE patient_id = ?
+                ");
+                $updHosp->execute([
+                    $firstName,
+                    $lastName,
+                    $mobile ?: null,
+                    $gender,
+                    $dob,
+                    $address ?: null,
+                    $city ?: null,
+                    $hospitalPatientId
+                ]);
+            } catch (Exception $e) {
+                error_log("PatientService Hospital Sync on Update Error: " . $e->getMessage());
+            }
+        }
 
         $updatedPatient = $this->getPatientById($id);
 

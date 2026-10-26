@@ -4,6 +4,7 @@
 namespace Pharmacy\Integrations;
 
 require_once __DIR__ . '/HospitalIntegrationInterface.php';
+require_once __DIR__ . '/../Database/Database.php';
 
 use Pharmacy\Database\Database;
 use PDO;
@@ -15,7 +16,21 @@ class HospitalIntegrationService implements HospitalIntegrationInterface
 
     public function __construct(?PDO $hospitalPdo = null)
     {
-        $this->hospitalPdo = $hospitalPdo ?: Database::getHospitalConnection();
+        if ($hospitalPdo !== null) {
+            try {
+                $dbName = $hospitalPdo->query("SELECT DATABASE()")->fetchColumn();
+                $targetDb = getenv('HOSPITAL_DB_NAME') ?: 'hospital_db';
+                if ($dbName !== $targetDb) {
+                    $this->hospitalPdo = Database::getHospitalConnection() ?: $hospitalPdo;
+                } else {
+                    $this->hospitalPdo = $hospitalPdo;
+                }
+            } catch (Exception $e) {
+                $this->hospitalPdo = Database::getHospitalConnection() ?: $hospitalPdo;
+            }
+        } else {
+            $this->hospitalPdo = Database::getHospitalConnection();
+        }
     }
 
     /**

@@ -19,6 +19,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+if (!empty($_SESSION['pharmacy_user_id']) && empty($_SESSION['user_id'])) {
+    $_SESSION['user_id'] = (int)$_SESSION['pharmacy_user_id'];
+}
+if (!empty($_SESSION['pharmacy_role_id']) && empty($_SESSION['role_id'])) {
+    $_SESSION['role_id'] = (int)$_SESSION['pharmacy_role_id'];
+}
+if (!empty($_SESSION['pharmacy_username']) && empty($_SESSION['username'])) {
+    $_SESSION['username'] = $_SESSION['pharmacy_username'];
+}
+
 // Hardened Security Headers & Content Security Policy
 if (!headers_sent()) {
     header('X-Frame-Options: SAMEORIGIN');
@@ -62,6 +72,19 @@ function require_login(string $redirectUrl = 'login.php'): void
         $loginUrl = BASE_URL . 'login.php';
         header("Location: " . $loginUrl);
         exit;
+    }
+
+    // Opportunistically enforce 1-week activity log retention once per request
+    static $purged = false;
+    if (!$purged) {
+        $purged = true;
+        global $pdo;
+        if (isset($pdo) && $pdo instanceof PDO) {
+            try {
+                $auditService = new \Pharmacy\Services\AuditService($pdo);
+                $auditService->purgeOldLogs(7);
+            } catch (Exception $e) {}
+        }
     }
 }
 

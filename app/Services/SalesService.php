@@ -3,13 +3,20 @@
 
 namespace Pharmacy\Services;
 
+require_once __DIR__ . '/FefoService.php';
+require_once __DIR__ . '/StockLedgerService.php';
+require_once __DIR__ . '/DocumentSequenceService.php';
+require_once __DIR__ . '/AuditService.php';
+
 use PDO;
 use Exception;
 use InvalidArgumentException;
+use Pharmacy\Database\Database;
 
 class SalesService
 {
     private PDO $pdo;
+    private ?PDO $hospitalPdo;
     private FefoService $fefoService;
     private StockLedgerService $ledgerService;
     private DocumentSequenceService $seqService;
@@ -19,9 +26,10 @@ class SalesService
     public const MAX_STANDARD_DISCOUNT_PERCENT = 10.0;
     public const MAX_ABSOLUTE_DISCOUNT_PERCENT = 50.0;
 
-    public function __construct(PDO $pdo)
+    public function __construct(PDO $pdo, ?PDO $hospitalPdo = null)
     {
         $this->pdo = $pdo;
+        $this->hospitalPdo = $hospitalPdo ?: Database::getHospitalConnection();
         $this->fefoService = new FefoService($pdo);
         $this->ledgerService = new StockLedgerService($pdo);
         $this->seqService = new DocumentSequenceService($pdo);
@@ -260,20 +268,129 @@ class SalesService
             $roundOff = round($grandTotal - $rawGrandTotal, 2);
             $totalDiscountAmount = round($subtotalAmount - $totalTaxable, 2);
 
+            // Resolve integer admission_id for Hospital IPD Billing integration
+            $hospConn = $this->hospitalPdo ?: $this->pdo;
+            $admissionId = !empty($data['admission_id']) ? (int)$data['admission_id'] : null;
+            if (!$admissionId && !empty($ipdAdmissionId)) {
+                if (is_numeric($ipdAdmissionId)) {
+                    $admissionId = (int)$ipdAdmissionId;
+                } else {
+                    try {
+                        $admStmt = $hospConn->prepare("SELECT admission_id FROM admissions WHERE ipd_number = ? LIMIT 1");
+                        $admStmt->execute([$ipdAdmissionId]);
+                        $admissionId = (int)$admStmt->fetchColumn() ?: null;
+                    } catch (Exception $e) {
+                        $admissionId = null;
+                    }
+                }
+            } elseif (!$admissionId && $saleType === 'IPD_SALE' && !empty($patientId)) {
+                try {
+                    $hPatId = $patientId;
+                    $pStmt = $this->pdo->prepare("SELECT hospital_patient_id FROM pharmacy_patients WHERE id = ?");
+                    $pStmt->execute([$patientId]);
+                    $mappedHospId = (int)$pStmt->fetchColumn();
+                    if ($mappedHospId > 0) {
+                        $hPatId = $mappedHospId;
+                    }
+
+                    $admStmt = $hospConn->prepare("
+                        SELECT a.admission_id 
+                        FROM admissions a 
+                        WHERE (a.patient_id = ? OR a.patient_id = ?)
+                          AND a.status = 'Admitted'
+                        ORDER BY a.admission_id DESC LIMIT 1
+                    ");
+                    $admStmt->execute([$patientId, $hPatId]);
+                    $admissionId = (int)$admStmt->fetchColumn() ?: null;
+                } catch (Exception $e) {
+                    $admissionId = null;
+                }
+            }
+
+            // Identify if patient is an Existing Hospital Patient (MediPro)
+            $isExistingPatient = false;
+            $hospitalPatientId = null;
+
+            if ($admissionId || !empty($ipdAdmissionId)) {
+                $isExistingPatient = true;
+                if ($admissionId) {
+                    try {
+                        $admPatStmt = $hospConn->prepare("SELECT patient_id FROM admissions WHERE admission_id = ?");
+                        $admPatStmt->execute([$admissionId]);
+                        $hospitalPatientId = (int)$admPatStmt->fetchColumn() ?: null;
+                    } catch (Exception $e) {
+                        $hospitalPatientId = null;
+                    }
+                }
+            }
+
+            if ($patientId > 0) {
+                // Check directly in MediPro patients table
+                try {
+                    $hStmt = $hospConn->prepare("SELECT patient_id FROM patients WHERE patient_id = ?");
+                    $hStmt->execute([$patientId]);
+                    $foundHId = $hStmt->fetchColumn();
+                    if ($foundHId) {
+                        $isExistingPatient = true;
+                        $hospitalPatientId = (int)$foundHId;
+                    }
+                } catch (Exception $e) {}
+
+                if (!$isExistingPatient) {
+                    // Check pharmacy_patients mapping to MediPro
+                    $ppStmt = $this->pdo->prepare("SELECT hospital_patient_id, hospital_uhid FROM pharmacy_patients WHERE id = ?");
+                    $ppStmt->execute([$patientId]);
+                    $pp = $ppStmt->fetch(PDO::FETCH_ASSOC);
+                    if ($pp) {
+                        if (!empty($pp['hospital_patient_id'])) {
+                            $isExistingPatient = true;
+                            $hospitalPatientId = (int)$pp['hospital_patient_id'];
+                        } elseif (!empty($pp['hospital_uhid'])) {
+                            try {
+                                $uStmt = $hospConn->prepare("SELECT patient_id FROM patients WHERE patient_code = ?");
+                                $uStmt->execute([$pp['hospital_uhid']]);
+                                $uFound = $uStmt->fetchColumn();
+                                if ($uFound) {
+                                    $isExistingPatient = true;
+                                    $hospitalPatientId = (int)$uFound;
+                                }
+                            } catch (Exception $e) {}
+                        }
+                    }
+                }
+            }
+
+            // Also check customer_name against hospital patients if not Walk-in
+            if (!$isExistingPatient && $customerName !== 'Walk-in Customer' && !empty($customerName)) {
+                try {
+                    $cStmt = $hospConn->prepare("
+                        SELECT patient_id FROM patients 
+                        WHERE CONCAT(first_name, ' ', last_name) = ? OR first_name = ?
+                        LIMIT 1
+                    ");
+                    $cStmt->execute([$customerName, $customerName]);
+                    $cFound = $cStmt->fetchColumn();
+                    if ($cFound) {
+                        $isExistingPatient = true;
+                        $hospitalPatientId = (int)$cFound;
+                    }
+                } catch (Exception $e) {}
+            }
+
             // Phase 2: Insert Sale Header
             $insSale = $this->pdo->prepare("
                 INSERT INTO pharmacy_sales (
                     sale_number, sale_type, sale_date, patient_type, patient_id,
-                    customer_name, customer_mobile, doctor_name, prescription_id,
                     ipd_admission_id, ipd_ward, ipd_bed,
+                    customer_name, customer_mobile, doctor_name, prescription_id,
                     subtotal_amount, discount_percent, discount_amount, discount_reason, discount_authorized_by,
                     taxable_amount, gst_amount, round_off, grand_total,
                     paid_amount, balance_amount, payment_status, payment_mode,
                     idempotency_key, status, notes, created_by, created_at
                 ) VALUES (
                     ?, ?, CURDATE(), ?, ?,
-                    ?, ?, ?, ?,
                     ?, ?, ?,
+                    ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     0.00, ?, 'UNPAID', 'CASH',
@@ -295,13 +412,13 @@ class SalesService
                 $saleType,
                 $patientType,
                 $patientId,
+                $ipdAdmissionId,
+                $ipdWard,
+                $ipdBed,
                 $customerName,
                 $customerMobile,
                 $doctorName,
                 $prescriptionId,
-                $ipdAdmissionId,
-                $ipdWard,
-                $ipdBed,
                 $subtotalAmount,
                 $headerDiscountPercent,
                 $totalDiscountAmount,
@@ -389,22 +506,43 @@ class SalesService
                 );
             }
 
-            // Phase 5: Process Initial Payment if supplied
+            // Phase 5: Billing & Payment Processing (Supports BOTH walk-in & previously registered HMS patients)
+            $rawMode = strtoupper(trim($payment['mode'] ?? 'CASH'));
+            $isCreditOrHospitalBilling = in_array($rawMode, ['HOSPITAL_BILLING', 'CREDIT'], true);
+
             $paidAmount = 0.0;
-            $paymentMode = 'CASH';
+            $balanceAmount = $grandTotal;
+            $paymentMode = 'Cash';
+            $paymentStatus = 'Unpaid';
+            $refNumber = !empty($payment['reference']) ? trim($payment['reference']) : null;
+            $payNotes = !empty($payment['notes']) ? trim($payment['notes']) : 'Pharmacy Settlement';
 
-            if (!empty($payment) && isset($payment['amount'])) {
-                $payAmt = max(0.0, (float)$payment['amount']);
-                if ($payAmt > $grandTotal) {
-                    throw new InvalidArgumentException("Payment amount (₹{$payAmt}) cannot exceed invoice grand total (₹{$grandTotal}).");
+            if ($isCreditOrHospitalBilling) {
+                // Hospital Credit / Forward to central billing
+                $paidAmount = 0.00;
+                $balanceAmount = $grandTotal;
+                $paymentStatus = 'CREDIT';
+                $paymentMode = ($rawMode === 'CREDIT') ? 'Credit' : 'Hospital Billing';
+            } else {
+                // Cash, Card, UPI, Bank Transfer, Cheque
+                $payAmt = isset($payment['amount']) ? (float)$payment['amount'] : $grandTotal;
+                if ($payAmt <= 0.0 && empty($payment['amount_specified'])) {
+                    $payAmt = $grandTotal;
                 }
+                $paidAmount = max(0.0, $payAmt);
+                $balanceAmount = round(max(0.0, $grandTotal - $paidAmount), 2);
+                $paymentStatus = ($balanceAmount <= 0.0) ? 'PAID' : ($paidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID');
+                $paymentMode = match ($rawMode) {
+                    'UPI'           => 'UPI',
+                    'CARD'          => 'Card',
+                    'BANK_TRANSFER' => 'Bank Transfer',
+                    'CHEQUE'        => 'Cheque',
+                    default         => 'Cash'
+                };
 
-                if ($payAmt > 0.0) {
-                    $paymentMode = strtoupper($payment['mode'] ?? 'CASH');
-                    $refNumber = $payment['reference'] ?? null;
-                    $payNotes = $payment['notes'] ?? 'Initial POS payment';
-
-                    $paySeq = $this->seqService->generate('SUPPLIER_PAYMENT'); // uses standard payment seq
+                // Record payment in pharmacy_sale_payments if paidAmount > 0
+                if ($paidAmount > 0) {
+                    $paySeq = $this->seqService->generate('SUPPLIER_PAYMENT');
                     $paySeqNum = 'RCP-' . substr($paySeq, 3);
 
                     $insPay = $this->pdo->prepare("
@@ -419,34 +557,69 @@ class SalesService
                     $insPay->execute([
                         $paySeqNum,
                         $saleId,
-                        $payAmt,
-                        $paymentMode,
+                        $paidAmount,
+                        $rawMode,
                         $refNumber,
                         $payNotes,
                         $userId
                     ]);
-
-                    $paidAmount = $payAmt;
                 }
             }
 
-            $balanceAmount = round($grandTotal - $paidAmount, 2);
-            $paymentStatus = 'UNPAID';
-            if ($paidAmount >= $grandTotal) {
-                $paymentStatus = 'PAID';
-            } elseif ($paidAmount > 0.0) {
-                $paymentStatus = 'PARTIALLY_PAID';
-            } elseif ($paymentMode === 'CREDIT' || ($data['is_credit'] ?? false)) {
-                $paymentStatus = 'CREDIT';
+            // Sync with MediPro Central Billing if Existing Hospital Patient
+            $mediproBillId = null;
+            if ($isExistingPatient) {
+                $visitId = null;
+                if ($hospitalPatientId && $this->hospitalPdo) {
+                    try {
+                        $vStmt = $this->hospitalPdo->prepare("SELECT visit_id FROM opd_visits WHERE patient_id = ? ORDER BY visit_id DESC LIMIT 1");
+                        $vStmt->execute([$hospitalPatientId]);
+                        $visitId = (int)$vStmt->fetchColumn() ?: null;
+                    } catch (Exception $e) {
+                        $visitId = null;
+                    }
+                }
+
+                $mediproBillId = $this->passSaleToHospitalBilling(
+                    $saleId,
+                    $hospitalPatientId ?: $patientId,
+                    $admissionId,
+                    $visitId,
+                    $saleNumber,
+                    $subtotalAmount,
+                    $totalDiscountAmount,
+                    $headerDiscountPercent,
+                    $totalGst,
+                    $grandTotal,
+                    $processedItems,
+                    $userId,
+                    $paidAmount,
+                    $balanceAmount,
+                    $paymentStatus,
+                    $paymentMode
+                );
+
+                $notesPrefix = $isCreditOrHospitalBilling 
+                    ? " [Passed to MediPro Bill #{$mediproBillId}]" 
+                    : " [Paid in Pharmacy & Synced to MediPro Bill #{$mediproBillId}]";
+                $notes = trim(($notes ?? '') . $notesPrefix);
             }
 
             // Update Sale Header with final payment numbers
             $updSale = $this->pdo->prepare("
                 UPDATE pharmacy_sales
-                SET paid_amount = ?, balance_amount = ?, payment_status = ?, payment_mode = ?
+                SET paid_amount = ?, balance_amount = ?, payment_status = ?,
+                    payment_mode = ?, notes = ?
                 WHERE sale_id = ?
             ");
-            $updSale->execute([$paidAmount, $balanceAmount, $paymentStatus, $paymentMode, $saleId]);
+            $updSale->execute([
+                $paidAmount,
+                $balanceAmount,
+                $paymentStatus,
+                $paymentMode,
+                $notes,
+                $saleId
+            ]);
 
             // Phase 6: Update prescription status if dispensing against a prescription
             if ($prescriptionId) {
@@ -471,7 +644,13 @@ class SalesService
             );
 
             $this->pdo->commit();
-            return $this->getSale($saleId);
+            $completedSale = $this->getSale($saleId);
+            $completedSale['is_existing_patient'] = $isExistingPatient;
+            $completedSale['passed_to_medipro'] = $isExistingPatient;
+            if ($isExistingPatient) {
+                $completedSale['medipro_bill_id'] = $mediproBillId;
+            }
+            return $completedSale;
 
         } catch (Exception $e) {
             if ($this->pdo->inTransaction()) {
@@ -1099,6 +1278,178 @@ class SalesService
             WHERE prescription_id = ?
         ");
         $updRx->execute([$newRxStatus, $prescriptionId]);
+
+        // Bidirectional Interdependence: Update Hospital Doctor's Prescriptions (prescriptions & prescription_items)
+        $hospConn = $this->hospitalPdo;
+        if ($hospConn) {
+            try {
+                $hRxChk = $hospConn->prepare("SELECT prescription_id, status FROM prescriptions WHERE prescription_id = ?");
+                $hRxChk->execute([$prescriptionId]);
+                if ($hRxChk->fetchColumn()) {
+                    foreach ($processedItems as $pItem) {
+                        $medId = (int)$pItem['medicine_id'];
+                        $qty = (int)$pItem['quantity'];
+
+                        $updHItem = $hospConn->prepare("
+                            UPDATE prescription_items
+                            SET dispensed_quantity = dispensed_quantity + ?,
+                                status = CASE WHEN (dispensed_quantity + ?) >= quantity THEN 'Fully Dispensed' ELSE 'Partially Dispensed' END
+                            WHERE prescription_id = ? AND medicine_id = ?
+                        ");
+                        $updHItem->execute([$qty, $qty, $prescriptionId, $medId]);
+                    }
+
+                    $hItemsStmt = $hospConn->prepare("SELECT quantity, dispensed_quantity FROM prescription_items WHERE prescription_id = ?");
+                    $hItemsStmt->execute([$prescriptionId]);
+                    $hItems = $hItemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    $allDone = true;
+                    $anyDone = false;
+                    foreach ($hItems as $hi) {
+                        if ((int)$hi['dispensed_quantity'] < (int)$hi['quantity']) {
+                            $allDone = false;
+                        }
+                        if ((int)$hi['dispensed_quantity'] > 0) {
+                            $anyDone = true;
+                        }
+                    }
+
+                    $hStatus = 'Active';
+                    if ($allDone && !empty($hItems)) {
+                        $hStatus = 'Fully Dispensed';
+                    } elseif ($anyDone) {
+                        $hStatus = 'Partially Dispensed';
+                    }
+
+                    $updHrx = $hospConn->prepare("UPDATE prescriptions SET status = ? WHERE prescription_id = ?");
+                    $updHrx->execute([$hStatus, $prescriptionId]);
+                }
+            } catch (Exception $e) {
+                error_log("Hospital Prescription sync note: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Pass pharmacy medication charges to Main MediPro central billing.
+     * Creates an approved pending bill in `bills` and itemized entries in `bill_items`.
+     */
+    private function passSaleToHospitalBilling(
+        int $saleId,
+        int $hospitalPatientId,
+        ?int $admissionId,
+        ?int $visitId,
+        string $saleNumber,
+        float $subtotalAmount,
+        float $totalDiscountAmount,
+        float $headerDiscountPercent,
+        float $totalGst,
+        float $grandTotal,
+        array $processedItems,
+        ?int $userId,
+        float $paidAmount = 0.00,
+        float $balanceAmount = 0.00,
+        string $paymentStatus = 'Pending',
+        string $paymentMode = 'Hospital Billing'
+    ): int {
+        $hospConn = $this->hospitalPdo;
+        if (!$hospConn) {
+            return 0;
+        }
+
+        try {
+            // 1. Create central bill in `bills` with accurate payment details
+            // so central cashier in MediPro can view either paid receipt or collect outstanding amount upon patient discharge.
+            $gstPercent = $subtotalAmount > 0 ? round(($totalGst / $subtotalAmount) * 100, 2) : 0.0;
+            
+            $insBill = $hospConn->prepare("
+                INSERT INTO bills (
+                    receipt_no, original_receipt_number, current_receipt_number,
+                    patient_id, visit_id, bill_type,
+                    total_amount, discount_amount, discount_percent, gst_percent, tax_amount,
+                    patient_payable, paid_amount, balance_amount, payment_status, payment_mode,
+                    generated_by, bill_date, status, receipt_type, created_at
+                ) VALUES (
+                    ?, ?, ?,
+                    ?, ?, 'Pharmacy',
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, CURDATE(), 'Approved', 'Normal', NOW()
+                )
+            ");
+            $insBill->execute([
+                $saleNumber,
+                $saleNumber,
+                $saleNumber,
+                $hospitalPatientId,
+                $visitId,
+                $grandTotal,
+                $totalDiscountAmount,
+                $headerDiscountPercent,
+                $gstPercent,
+                $totalGst,
+                $grandTotal,
+                $paidAmount,
+                $balanceAmount,
+                $paymentStatus,
+                $paymentMode,
+                $userId ?: 1
+            ]);
+            $billId = (int)$hospConn->lastInsertId();
+
+            // 2. Insert itemized charges into `bill_items`
+            $insItem = $hospConn->prepare("
+                INSERT INTO bill_items (
+                    bill_id, charge_category, item_name, quantity, unit, rate,
+                    discount, tax_percent, tax_amount, total_amount, amount,
+                    order_ref_id, order_type, charge_date
+                ) VALUES (
+                    ?, 'Pharmacy', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, 'pharmacy', CURDATE()
+                )
+            ");
+
+            foreach ($processedItems as $pItem) {
+                $mStmt = $this->pdo->prepare("SELECT medicine_name, pack_size FROM medicines WHERE medicine_id = ?");
+                $mStmt->execute([$pItem['medicine_id']]);
+                $mRow = $mStmt->fetch(PDO::FETCH_ASSOC);
+                $medName = $mRow['medicine_name'] ?? ('Medicine #' . $pItem['medicine_id']);
+                $packSize = $mRow['pack_size'] ?? ($pItem['pack_size'] ?? 'Unit');
+
+                // Include batch details if allocated
+                $batchDetails = [];
+                if (!empty($pItem['allocations'])) {
+                    foreach ($pItem['allocations'] as $alloc) {
+                        $bNum = $alloc['batch_number'] ?? '';
+                        $exp = !empty($alloc['expiry_date']) ? date('m/y', strtotime($alloc['expiry_date'])) : '';
+                        if ($bNum) {
+                            $batchDetails[] = "Batch: {$bNum}" . ($exp ? " (Exp: {$exp})" : "");
+                        }
+                    }
+                }
+                $displayName = $medName . (!empty($batchDetails) ? ' [' . implode(', ', $batchDetails) . ']' : '');
+
+                $insItem->execute([
+                    $billId,
+                    $displayName,
+                    $pItem['quantity'],
+                    $packSize,
+                    $pItem['unit_price'],
+                    $pItem['discount_amount'],
+                    $pItem['gst_percent'],
+                    $pItem['gst_amount'],
+                    $pItem['line_total'],
+                    $pItem['taxable_amount'],
+                    $saleId
+                ]);
+            }
+
+            return $billId;
+        } catch (Exception $e) {
+            error_log("Hospital Billing Sync Error (non-fatal): " . $e->getMessage());
+            return 0;
+        }
     }
 
     /**
@@ -1146,7 +1497,7 @@ class SalesService
             // Fetch editor user name
             $userName = 'System / Cashier';
             if ($userId) {
-                $uStmt = $this->pdo->prepare("SELECT name FROM pharmacy_users WHERE user_id = ?");
+                $uStmt = $this->pdo->prepare("SELECT full_name FROM pharmacy_users WHERE id = ?");
                 $uStmt->execute([$userId]);
                 $userName = $uStmt->fetchColumn() ?: 'Staff #' . $userId;
             }

@@ -41,17 +41,10 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h4 class="fw-bold mb-1"><i class="ti ti-clipboard-list text-emerald me-2"></i>Medication Administration Register</h4>
-            <p class="text-muted small mb-0">Daily log of clinical doses given, held, refused, or missed across all inpatient wards.</p>
-        </div>
-        <div>
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-                <i class="ti ti-printer me-1"></i>Print Register
-            </button>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+            <i class="ti ti-printer me-1"></i>Print Register
+        </button>
     </div>
 
     <!-- Filter Bar -->

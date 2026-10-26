@@ -121,77 +121,125 @@ include __DIR__ . '/../../includes/navbar.php';
         </div>
     </div>
 
-    <!-- 1. TOP KPI ROW (Compact, Readable, Minimal Decoration) -->
-    <div class="row g-2 g-md-3 mb-3">
+    <!-- 1. TOP KPI STAT CARDS (MediPro Modern UI System) -->
+    <div class="row g-3 mb-3">
         <!-- KPI 1: Today's / Period Sales -->
         <div class="col-xl-3 col-sm-6">
-            <div class="kpi-card">
-                <div class="kpi-label">
-                    <span>Net Sales</span>
-                    <span class="kpi-status-dot dot-emerald" title="Normal"></span>
+            <div class="stat-card stat-teal">
+                <div class="stat-card-header">
+                    <div class="stat-card-left">
+                        <div class="stat-icon icon-teal">
+                            <i class="ti ti-receipt-tax"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value count-up">₹<?= number_format($metrics['sales']['net_after_returns'], 2) ?></div>
+                            <div class="stat-label">Net Sales</div>
+                        </div>
+                    </div>
+                    <span class="stat-card-chip">
+                        <i class="ti ti-arrow-up-right chip-arrow text-primary"></i> <?= (int)$metrics['sales']['invoices_count'] ?> bills
+                    </span>
                 </div>
-                <div class="kpi-value text-emerald">
-                    ₹<?= number_format($metrics['sales']['net_after_returns'], 2) ?>
+                <div class="mini-progress">
+                    <div class="mini-progress-bar bg-primary" style="width: 85%;"></div>
                 </div>
-                <div class="kpi-sub">
-                    <span>Gross: ₹<?= number_format($metrics['sales']['gross_sales'], 2) ?></span>
-                    <span>&bull;</span>
-                    <span><?= $metrics['sales']['invoices_count'] ?> Invoices</span>
+                <div class="d-flex align-items-center justify-content-between mt-2 pt-1">
+                    <span class="stat-badge bg-primary bg-opacity-10 text-primary">
+                        <i class="ti ti-calendar me-1"></i><?= htmlspecialchars($rangeBounds['label'] ?? 'Today') ?>
+                    </span>
+                    <span class="text-muted small">Gross: ₹<?= number_format($metrics['sales']['gross_sales'], 2) ?></span>
                 </div>
             </div>
         </div>
 
         <!-- KPI 2: Pending Receivables / Dues -->
         <div class="col-xl-3 col-sm-6">
-            <div class="kpi-card">
-                <div class="kpi-label">
-                    <span>Pending Receivables</span>
-                    <span class="kpi-status-dot <?= ($metrics['sales']['credit'] + $metrics['sales']['outstanding']) > 0 ? 'dot-amber' : 'dot-emerald' ?>" title="Payment status"></span>
+            <div class="stat-card stat-amber">
+                <div class="stat-card-header">
+                    <div class="stat-card-left">
+                        <div class="stat-icon icon-amber">
+                            <i class="ti ti-coin"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value count-up">₹<?= number_format($metrics['sales']['credit'] + $metrics['sales']['outstanding'], 2) ?></div>
+                            <div class="stat-label">Pending Dues</div>
+                        </div>
+                    </div>
+                    <span class="stat-card-chip text-warning">
+                        <i class="ti ti-clock-pause chip-arrow"></i> Credit
+                    </span>
                 </div>
-                <div class="kpi-value <?= ($metrics['sales']['credit'] + $metrics['sales']['outstanding']) > 0 ? 'text-amber-emphasis' : 'text-dark' ?>">
-                    ₹<?= number_format($metrics['sales']['credit'] + $metrics['sales']['outstanding'], 2) ?>
+                <div class="mini-progress">
+                    <div class="mini-progress-bar bg-warning" style="width: <?= ($metrics['sales']['credit'] + $metrics['sales']['outstanding']) > 0 ? '60%' : '15%' ?>;"></div>
                 </div>
-                <div class="kpi-sub">
-                    <span>OPD: <?= $metrics['opd']['pending_bills'] ?> pending</span>
-                    <span>&bull;</span>
-                    <span>IPD: <?= $metrics['ipd']['pending_bills'] ?> pending</span>
+                <div class="d-flex align-items-center justify-content-between mt-2 pt-1">
+                    <span class="stat-badge bg-warning bg-opacity-10 text-warning">
+                        OPD: <?= (int)$metrics['opd']['pending_bills'] ?> &bull; IPD: <?= (int)$metrics['ipd']['pending_bills'] ?>
+                    </span>
+                    <span class="text-muted small">Receivables</span>
                 </div>
             </div>
         </div>
 
-        <!-- KPI 3: Low & Out of Stock -->
+        <!-- KPI 3: Stock Alerts -->
         <div class="col-xl-3 col-sm-6">
-            <div class="kpi-card kpi-clickable" 
+            <div class="stat-card stat-rose" 
                  onclick="openCatalogWithFilter('<?= $outOfStockCount > 0 ? 'out_of_stock' : ($lowStockCount > 0 ? 'low_stock' : 'all') ?>')"
                  title="Click to inspect medicine catalog">
-                <div class="kpi-label">
-                    <span>Stock Alerts</span>
-                    <span class="kpi-status-dot <?= ($outOfStockCount > 0) ? 'dot-red' : (($lowStockCount > 0) ? 'dot-amber' : 'dot-emerald') ?>" title="Inventory health"></span>
+                <div class="stat-card-header">
+                    <div class="stat-card-left">
+                        <div class="stat-icon icon-rose">
+                            <i class="ti ti-alert-triangle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value count-up"><?= $lowStockCount + $outOfStockCount ?></div>
+                            <div class="stat-label">Stock Alerts</div>
+                        </div>
+                    </div>
+                    <span class="stat-card-chip text-danger">
+                        <i class="ti ti-arrow-up-right chip-arrow text-danger"></i> <?= $outOfStockCount ?> Zero
+                    </span>
                 </div>
-                <div class="kpi-value <?= ($outOfStockCount > 0) ? 'text-danger' : (($lowStockCount > 0) ? 'text-amber-emphasis' : 'text-dark') ?>">
-                    <?= $lowStockCount ?> Low <span class="text-muted fs-6 fw-normal">/</span> <?= $outOfStockCount ?> Out
+                <div class="mini-progress">
+                    <div class="mini-progress-bar bg-danger" style="width: <?= $totalCatalogCount > 0 ? min(100, round((($lowStockCount + $outOfStockCount) / $totalCatalogCount) * 100)) : 0 ?>%;"></div>
                 </div>
-                <div class="kpi-sub">
-                    <span><?= $totalCatalogCount ?> total catalog items (Click to view)</span>
+                <div class="d-flex align-items-center justify-content-between mt-2 pt-1">
+                    <span class="stat-badge bg-danger bg-opacity-10 text-danger">
+                        <?= $lowStockCount ?> Low &bull; <?= $outOfStockCount ?> Out
+                    </span>
+                    <span class="text-muted small"><?= $totalCatalogCount ?> Formularies</span>
                 </div>
             </div>
         </div>
 
         <!-- KPI 4: Expiring Soon -->
         <div class="col-xl-3 col-sm-6">
-            <div class="kpi-card kpi-clickable" 
+            <div class="stat-card stat-indigo" 
                  data-bs-toggle="modal" 
                  data-bs-target="#expiringBatchesModal"
                  title="Click to view expiring batches">
-                <div class="kpi-label">
-                    <span>Expiring Soon (&le; 90d)</span>
-                    <span class="kpi-status-dot <?= count($expiringBatchesList) > 0 ? 'dot-amber' : 'dot-emerald' ?>" title="Shelf life"></span>
+                <div class="stat-card-header">
+                    <div class="stat-card-left">
+                        <div class="stat-icon icon-indigo">
+                            <i class="ti ti-clock-stop"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value count-up"><?= count($expiringBatchesList) ?></div>
+                            <div class="stat-label">Expiring Soon</div>
+                        </div>
+                    </div>
+                    <span class="stat-card-chip text-indigo">
+                        <i class="ti ti-arrow-up-right chip-arrow text-indigo"></i> &le; 90 Days
+                    </span>
                 </div>
-                <div class="kpi-value <?= count($expiringBatchesList) > 0 ? 'text-amber-emphasis' : 'text-dark' ?>">
-                    <?= $metrics['inventory']['expiring_soon_batches'] ?> Batches
+                <div class="mini-progress">
+                    <div class="mini-progress-bar bg-indigo" style="width: <?= min(100, max(20, count($expiringBatchesList) * 6)) ?>%;"></div>
                 </div>
-                <div class="kpi-sub">
-                    <span>Requires FEFO dispensing priority</span>
+                <div class="d-flex align-items-center justify-content-between mt-2 pt-1">
+                    <span class="stat-badge bg-info bg-opacity-10 text-primary">
+                        FEFO Priority
+                    </span>
+                    <span class="text-muted small"><?= count($expiringBatchesList) ?> Batches</span>
                 </div>
             </div>
         </div>
@@ -295,7 +343,7 @@ include __DIR__ . '/../../includes/navbar.php';
                 </div>
                 <div class="card-body p-0">
                     <div class="list-group list-group-flush">
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                        <a href="<?= BASE_URL ?>modules/ipd/indents.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="ti ti-notes text-primary"></i>
                                 <span class="small fw-medium text-dark">Pending Ward Indents</span>
@@ -303,8 +351,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span class="badge <?= ($metrics['operations']['pending_indents'] ?? 0) > 0 ? 'bg-primary' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-2 py-0.5">
                                 <?= $metrics['operations']['pending_indents'] ?? 0 ?>
                             </span>
-                        </div>
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                        </a>
+                        <a href="<?= BASE_URL ?>modules/sales/returns.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="ti ti-arrow-back-up text-warning"></i>
                                 <span class="small fw-medium text-dark">Pending Sales Returns</span>
@@ -312,8 +360,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span class="badge <?= $metrics['operations']['pending_sale_returns'] > 0 ? 'bg-warning text-dark' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-2 py-0.5">
                                 <?= $metrics['operations']['pending_sale_returns'] ?>
                             </span>
-                        </div>
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                        </a>
+                        <a href="<?= BASE_URL ?>modules/purchases/returns.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="ti ti-truck-return text-danger"></i>
                                 <span class="small fw-medium text-dark">Pending Purchase Returns</span>
@@ -321,8 +369,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span class="badge <?= $metrics['operations']['pending_purchase_returns'] > 0 ? 'bg-danger' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-2 py-0.5">
                                 <?= $metrics['operations']['pending_purchase_returns'] ?>
                             </span>
-                        </div>
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                        </a>
+                        <a href="<?= BASE_URL ?>modules/inventory/quarantine.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="ti ti-shield-alert text-secondary"></i>
                                 <span class="small fw-medium text-dark">Active Quarantine Records</span>
@@ -330,8 +378,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span class="badge <?= $metrics['operations']['active_quarantine'] > 0 ? 'bg-secondary text-white' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-2 py-0.5">
                                 <?= $metrics['operations']['active_quarantine'] ?>
                             </span>
-                        </div>
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                        </a>
+                        <a href="<?= BASE_URL ?>modules/inventory/disposals.php" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-3 py-2 text-decoration-none">
                             <div class="d-flex align-items-center gap-2">
                                 <i class="ti ti-trash text-danger"></i>
                                 <span class="small fw-medium text-dark">Pending Stock Disposals</span>
@@ -339,7 +387,7 @@ include __DIR__ . '/../../includes/navbar.php';
                             <span class="badge <?= ($metrics['operations']['pending_disposals'] ?? 0) > 0 ? 'bg-danger' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-2 py-0.5">
                                 <?= $metrics['operations']['pending_disposals'] ?? 0 ?>
                             </span>
-                        </div>
+                        </a>
                     </div>
                 </div>
             </div>

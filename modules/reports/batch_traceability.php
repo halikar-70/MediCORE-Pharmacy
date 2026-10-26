@@ -44,20 +44,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-route text-primary me-2"></i>End-to-End Batch Traceability Audit
-            </h4>
-            <p class="text-muted small mb-0">Track complete batch lifecycle from procurement & inwarding to sales, returns, quarantines, and destruction.</p>
-        </div>
-        <?php if ($lifecycleData): ?>
+    <?php if ($lifecycleData): ?>
+        <div class="d-flex justify-content-end mb-3">
             <button type="button" class="btn btn-outline-secondary rounded-pill px-3 py-2 small" onclick="window.print();">
                 <i class="ti ti-printer me-1"></i> Print Report
             </button>
-        <?php endif; ?>
-    </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Batch Selector Form -->
     <div class="card border-0 shadow-sm rounded-4 p-3 bg-white mb-4">

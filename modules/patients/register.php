@@ -97,24 +97,10 @@ include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
 
-<div class="mb-4">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h4 class="fw-bold mb-1 text-dark">
-                <?php if ($isEdit): ?>
-                    <i class="ti ti-user-edit text-emerald me-1.5"></i> Edit Pharmacy Patient
-                <?php else: ?>
-                    <i class="ti ti-user-plus text-emerald me-1.5"></i> Register Pharmacy Patient
-                <?php endif; ?>
-            </h4>
-            <p class="text-muted small mb-0">
-                <?= $isEdit ? 'Modify demographic and contact details for existing patient (<strong>' . sanitize($existingPatient['pharmacy_patient_no'] ?? '') . '</strong>).' : 'Creates an independent <strong>Pharmacy Patient ID</strong> (<code>PP-XXXXXX</code>). Hospital links remain optional and nullable.' ?>
-            </p>
-        </div>
-        <a href="<?= BASE_URL ?>modules/patients/list.php" class="btn btn-outline-secondary shadow-xs">
-            <i class="ti ti-arrow-left me-1"></i> Patient Directory
-        </a>
-    </div>
+<div class="d-flex justify-content-end align-items-center mb-3">
+    <a href="<?= BASE_URL ?>modules/patients/list.php" class="btn btn-outline-secondary shadow-xs">
+        <i class="ti ti-arrow-left me-1"></i> Patient Directory
+    </a>
 </div>
 
 <?php if ($successPatient): ?>

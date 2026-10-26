@@ -369,24 +369,15 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header bar -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-truck-loading text-emerald me-2"></i>Goods Received Notes (GRN)
-            </h4>
-            <p class="text-muted small mb-0">Physical stock receipt verification, batch allocation, expiry inspection, and inventory inward.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="invoices.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
-                <i class="ti ti-file-invoice me-1"></i> Purchase Invoices
-            </a>
-            <?php if ($canCreate): ?>
-                <button type="button" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;" data-bs-toggle="modal" data-bs-target="#createGrnModal">
-                    <i class="ti ti-plus me-1"></i> Receive Stock (New GRN)
-                </button>
-            <?php endif; ?>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="invoices.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
+            <i class="ti ti-file-invoice me-1"></i> Purchase Invoices
+        </a>
+        <?php if ($canCreate): ?>
+            <button type="button" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;" data-bs-toggle="modal" data-bs-target="#createGrnModal">
+                <i class="ti ti-plus me-1"></i> Receive Stock (New GRN)
+            </button>
+        <?php endif; ?>
     </div>
 
     <?php if ($feedback): ?>

@@ -50,22 +50,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header bar -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-building-bank text-emerald me-2"></i>Supplier Outstanding & Aging Analysis
-            </h4>
-            <p class="text-muted small mb-0">Creditor balances, due date monitoring, and aging distribution (0-30, 31-60, 61-90, 90+ days).</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="ledger.php" class="btn btn-outline-dark rounded-pill px-3 py-2 small">
-                <i class="ti ti-book-2 me-1"></i> Supplier Ledger
-            </a>
-            <a href="payments.php" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;">
-                <i class="ti ti-cash me-1"></i> Record Payment
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="ledger.php" class="btn btn-outline-dark rounded-pill px-3 py-2 small">
+            <i class="ti ti-book-2 me-1"></i> Supplier Ledger
+        </a>
+        <a href="payments.php" class="btn btn-emerald rounded-pill px-3 py-2 text-white small" style="background-color: #059669;">
+            <i class="ti ti-cash me-1"></i> Record Payment
+        </a>
     </div>
 
     <!-- Metric Cards -->

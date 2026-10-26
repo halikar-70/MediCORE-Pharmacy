@@ -8,70 +8,80 @@
    1. GLOBAL DESIGN TOKENS
    -------------------------------------------------------------------------- */
 :root {
-    /* Brand Identity (Clinical Healthcare Emerald / Blue Accents) */
-    --primary: #059669;
-    --primary-dark: #047857;
-    --primary-light: #ecfdf5;
-    --primary-rgb: 5, 150, 105;
+    /* Brand — teal is dominant (MediPro / Vatsalya standard), blue is a sparing accent */
+    --primary: #14B8A6;
+    --primary-hover: #0F9C8C;
+    --primary-dark: #0F9C8C;
+    --primary-light: #E6FBF7;
+    --primary-glow: rgba(20, 184, 166, 0.18);
+    --primary-rgb: 20, 184, 166;
 
-    /* Secondary / Neutral */
-    --secondary: #475569;
-    --secondary-dark: #334155;
-    --secondary-light: #f1f5f9;
-    --secondary-rgb: 71, 85, 105;
+    --secondary: #14B8A6;
+    --secondary-hover: #0F9C8C;
+    --secondary-dark: #0F9C8C;
+    --secondary-light: #EAF2FE;
+    --secondary-rgb: 20, 184, 166;
 
-    /* Status & Clinical Signals */
-    --success: #10b981;
-    --success-dark: #059669;
-    --success-light: #ecfdf5;
-    --success-rgb: 16, 185, 129;
+    /* Status */
+    --success: #22C55E;
+    --success-dark: #16A34A;
+    --success-light: rgba(34, 197, 94, 0.12);
+    --success-rgb: 34, 197, 94;
 
-    --warning: #d97706;
-    --warning-dark: #b45309;
-    --warning-light: #fffbeb;
-    --warning-rgb: 217, 119, 6;
+    --warning: #F59E0B;
+    --warning-dark: #D97706;
+    --warning-light: rgba(245, 158, 11, 0.12);
+    --warning-rgb: 245, 158, 11;
 
-    --danger: #dc2626;
-    --danger-dark: #b91c1c;
-    --danger-light: #fef2f2;
-    --danger-rgb: 220, 38, 38;
+    --danger: #EF4444;
+    --danger-dark: #DC2626;
+    --danger-light: rgba(239, 68, 68, 0.12);
+    --danger-rgb: 239, 68, 68;
 
-    --info: #2563eb;
-    --info-dark: #1d4ed8;
-    --info-light: #eff6ff;
-    --info-rgb: 37, 99, 235;
+    --info: #3B82F6;
+    --info-dark: #2563EB;
+    --info-light: rgba(59, 130, 246, 0.12);
+    --info-rgb: 59, 130, 246;
 
-    /* Surfaces & Layout */
-    --background: #f8fafc;
-    --surface: #ffffff;
-    --surface-muted: #f1f5f9;
-    --surface-hover: #f8fafc;
-    --border: #e2e8f0;
-    --border-dark: #cbd5e1;
+    /* Surfaces */
+    --bg-light: #F5F7FB;
+    --sidebar-bg: #FFFFFF;
+    --sidebar-text: #6B7280;
+    --card-bg: #FFFFFF;
+    --border-color: #E8EDF5;
 
-    /* Text Colors */
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
-    --text-light: #94a3b8;
+    /* Text */
+    --text-main: #1F2937;
+    --text-muted: #6B7280;
+    --text-light: #9CA3AF;
 
-    /* Geometry & Spacing */
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
+    /* Elevation */
+    --card-shadow: 0 2px 10px -2px rgba(31, 41, 55, 0.05), 0 1px 4px -1px rgba(31, 41, 55, 0.04);
+    --card-shadow-hover: 0 16px 32px -12px rgba(31, 41, 55, 0.14), 0 4px 10px -4px rgba(31, 41, 55, 0.06);
+
+    /* Radii */
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 22px;
     --radius-pill: 999px;
 
-    /* Restrained Elevation / Shadows */
-    --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
-    --shadow-md: 0 3px 6px -1px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
-    --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-
-    /* Dimensions */
-    --sidebar-width: 250px;
-    --topbar-height: 58px;
+    /* Legacy Backward Compatibility Aliases */
+    --background: var(--bg-light);
+    --surface: var(--card-bg);
+    --surface-muted: var(--bg-light);
+    --surface-hover: #F0FDFA;
+    --border: var(--border-color);
+    --border-dark: #D6DEEA;
+    --text-primary: var(--text-main);
+    --text-secondary: var(--text-muted);
+    --shadow-sm: var(--card-shadow);
+    --shadow-md: 0 4px 14px rgba(31, 41, 55, 0.08);
+    --shadow-lg: var(--card-shadow-hover);
+    --sidebar-width: 220px;
+    --topbar-height: 60px;
 
     /* Font stack */
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
@@ -79,25 +89,27 @@
    2. BOOTSTRAP 5 VARIABLE OVERRIDES
    -------------------------------------------------------------------------- */
 :root {
-    --bs-primary: var(--primary);
-    --bs-primary-rgb: var(--primary-rgb);
-    --bs-secondary: var(--secondary);
-    --bs-secondary-rgb: var(--secondary-rgb);
-    --bs-success: var(--success);
-    --bs-success-rgb: var(--success-rgb);
-    --bs-warning: var(--warning);
-    --bs-warning-rgb: var(--warning-rgb);
-    --bs-danger: var(--danger);
-    --bs-danger-rgb: var(--danger-rgb);
-    --bs-info: var(--info);
-    --bs-info-rgb: var(--info-rgb);
-    --bs-light: var(--surface-muted);
-    --bs-dark: var(--text-primary);
-    --bs-body-color: var(--text-primary);
-    --bs-body-bg: var(--background);
-    --bs-border-color: var(--border);
-    --bs-link-color: var(--primary);
-    --bs-link-hover-color: var(--primary-dark);
+    --bs-primary: #14B8A6;
+    --bs-primary-rgb: 20, 184, 166;
+    --bs-secondary: #6B7280;
+    --bs-secondary-rgb: 107, 114, 128;
+    --bs-success: #22C55E;
+    --bs-success-rgb: 34, 197, 94;
+    --bs-danger: #EF4444;
+    --bs-danger-rgb: 239, 68, 68;
+    --bs-warning: #F59E0B;
+    --bs-warning-rgb: 245, 158, 11;
+    --bs-info: #3B82F6;
+    --bs-info-rgb: 59, 130, 246;
+    --bs-light: #F5F7FB;
+    --bs-light-rgb: 245, 247, 251;
+    --bs-dark: #1F2937;
+    --bs-dark-rgb: 31, 41, 55;
+    --bs-body-color: #1F2937;
+    --bs-body-bg: #F5F7FB;
+    --bs-border-color: #E8EDF5;
+    --bs-link-color: #14B8A6;
+    --bs-link-hover-color: #0F9C8C;
 }
 
 /* --------------------------------------------------------------------------
@@ -222,10 +234,55 @@ a:hover {
 }
 
 .sidebar-brand {
-    padding: 1rem 0.875rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    color: var(--text-main);
+    padding: 1.1rem 0.75rem 0.9rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
     text-align: center;
+    background: #ffffff;
+}
+
+.sidebar-brand-logo {
+    display: block;
+    max-width: 60%;
+    max-height: 54px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    margin-bottom: 10px;
+    position: relative;
+    left: 10px;
+}
+
+.sidebar-brand-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.sidebar-brand-title {
+    font-size: clamp(11px, 0.9vw + 6px, 15px);
+    line-height: 1.15;
+    color: #e60000;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sidebar-brand-subtitle {
+    font-size: clamp(5.5px, 0.4vw + 3px, 7.5px);
+    color: #6b7280;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    line-height: 1.3;
 }
 
 /* Sidebar Nav & Collapsible Groups */
@@ -297,11 +354,12 @@ a:hover {
 }
 
 .sidebar-group-header.active-group {
-    color: var(--primary-dark);
+    color: var(--primary, #14b8a6) !important;
+    font-weight: 700;
 }
 
-.sidebar-group-header.active-group .group-title-wrap i {
-    color: var(--primary-dark);
+.sidebar-group-header.active-group .group-chevron {
+    color: var(--primary, #14b8a6) !important;
 }
 
 .sidebar-group-header[aria-expanded="true"] .group-chevron,
@@ -392,72 +450,377 @@ a:hover {
     visibility: visible;
 }
 
-/* Main Container & Topbar */
+/* Main Container & Layout */
+.content-wrapper,
 .main-container {
-    flex-grow: 1;
-    margin-left: var(--sidebar-width);
+    flex: 1 1 auto;
+    min-width: 0;
+    width: calc(100% - var(--sidebar-width, 220px));
+    margin-left: var(--sidebar-width, 220px);
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    min-height: 100vh;
+    position: relative;
+    padding-bottom: 4.5rem;
     background-color: var(--background);
 }
 
-.top-navbar {
-    height: var(--topbar-height);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 1.5rem;
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    box-shadow: var(--shadow-sm);
-}
-
-.main-content {
-    padding: 1.25rem 1.5rem 2rem 1.5rem;
-    flex-grow: 1;
+@media (max-width: 991.98px) {
+    .content-wrapper,
+    .main-container {
+        width: 100% !important;
+        margin-left: 0 !important;
+    }
 }
 
 /* --------------------------------------------------------------------------
-   5. REUSABLE CARDS & SURFACES
+   TOPBAR (MediPro Floating Card Design)
+   -------------------------------------------------------------------------- */
+.topbar {
+    background: #ffffff;
+    padding: 0.75rem 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    margin: 0.75rem 0.75rem 0;
+    position: relative;
+    z-index: 90;
+    box-shadow: var(--card-shadow);
+    width: calc(100% - 1.5rem);
+    display: flex;
+    flex-direction: column;
+}
+
+.topbar-hero {
+    width: 100%;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.topbar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-pill);
+    color: var(--primary);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    background: var(--primary-light);
+    border: 1px solid rgba(20, 184, 166, 0.18);
+    margin-bottom: 0.35rem;
+    line-height: 1.2;
+}
+
+.topbar-title {
+    font-weight: 800;
+    font-size: 1.15rem;
+    color: var(--text-main);
+    margin-bottom: 0.2rem;
+    line-height: 1.25;
+}
+
+.topbar-hero-left {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.topbar-hero-text {
+    min-width: 0;
+}
+
+.topbar-description {
+    color: var(--text-muted);
+    max-width: 580px;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    margin: 0;
+}
+
+.topbar-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+}
+
+.topbar-hero-actions .topbar-pill,
+.topbar-hero-actions .btn,
+.topbar-hero-actions .user-menu {
+    height: 35px;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.topbar-hero-actions .topbar-pill {
+    padding: 0 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.topbar-hero-actions .btn {
+    font-size: 0.78rem;
+    padding: 0 0.9rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.topbar-hero-actions .btn-outline-primary {
+    border-color: rgba(20, 184, 166, 0.35);
+    background-color: #ffffff;
+    color: var(--primary);
+    transition: all 0.2s ease;
+}
+
+.topbar-hero-actions .btn-outline-primary:hover {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(20, 184, 166, 0.25);
+}
+
+.topbar-hero-actions .btn-primary {
+    background-color: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+    transition: all 0.2s ease;
+}
+
+.topbar-hero-actions .btn-primary:hover {
+    background-color: var(--primary-hover);
+    border-color: var(--primary-hover);
+    box-shadow: 0 3px 10px rgba(20, 184, 166, 0.3);
+}
+
+.topbar-hero-actions .user-menu {
+    padding: 0 0.75rem 0 0.35rem;
+    border-radius: var(--radius-pill);
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.topbar-row {
+    width: 100%;
+}
+
+.topbar-center {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.topbar-tab {
+    padding: 0.42rem 0.85rem;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+    background: transparent;
+    text-decoration: none !important;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.topbar-tab.active,
+.topbar-tab:hover {
+    color: var(--primary);
+    background: var(--primary-light);
+    border-color: rgba(20, 184, 166, 0.18);
+}
+
+.topbar-tab.active {
+    font-weight: 700;
+}
+
+.topbar-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--radius-pill);
+    background: var(--bg-light);
+    color: var(--text-main);
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.topbar-pill.role-pill {
+    background: var(--primary-light);
+    color: var(--primary);
+    border-color: rgba(20, 184, 166, 0.18);
+}
+
+.user-menu {
+    color: var(--text-main);
+    padding: 0.3rem 0.65rem;
+    border-radius: var(--radius-pill);
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    text-decoration: none !important;
+}
+
+.user-menu:hover {
+    color: var(--primary);
+    background: var(--primary-light);
+    border-color: rgba(20, 184, 166, 0.22);
+}
+
+.user-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    background: linear-gradient(135deg, var(--primary), #0d9488);
+    color: #ffffff;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.user-name {
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.btn-icon {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border-color);
+    background: #ffffff;
+    color: var(--text-muted);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-icon:hover {
+    background: var(--bg-light);
+    color: var(--primary);
+}
+
+.btn-icon i {
+    font-size: 1.1rem;
+}
+
+@media (max-width: 992px) {
+    .topbar {
+        margin: 0.5rem 0.5rem 0;
+        width: calc(100% - 1rem);
+        padding: 0.65rem 0.9rem;
+    }
+
+    .topbar-hero {
+        border-bottom: none;
+        padding-bottom: 0;
+        margin-bottom: 0;
+    }
+
+    .topbar-row {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .topbar-center {
+        display: none;
+    }
+}
+
+.main-content {
+    padding: 0.75rem 0.75rem 1.5rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.page-footer {
+    position: fixed;
+    bottom: 0;
+    left: var(--sidebar-width, 220px);
+    right: 0;
+    width: auto;
+    z-index: 1000;
+    height: 42px;
+    padding: 0 1.5rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: var(--text-muted);
+    background: #ffffff;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+    box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
+    border-radius: 0 !important;
+    margin: 0 !important;
+    font-size: 0.78rem;
+}
+
+@media (max-width: 991.98px) {
+    .page-footer {
+        left: 0;
+        width: 100%;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   5. REUSABLE CARDS & SURFACES (MediPro Style)
    -------------------------------------------------------------------------- */
 .card,
 .card-custom {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--card-shadow);
     margin-bottom: 1rem;
-    transition: border-color 0.15s ease;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease, border-color 0.2s ease;
+    overflow: visible;
+}
+
+.card:hover,
+.card-custom:hover {
+    box-shadow: var(--card-shadow-hover);
 }
 
 .card-header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0.875rem 1.25rem;
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text-primary);
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem 1.15rem;
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: var(--text-main);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-top-left-radius: var(--radius-lg) !important;
-    border-top-right-radius: var(--radius-lg) !important;
+    border-top-left-radius: var(--radius-md) !important;
+    border-top-right-radius: var(--radius-md) !important;
 }
 
 .card-body {
-    padding: 1.25rem;
+    padding: 1.15rem;
 }
 
 .card-footer {
-    background: var(--surface-muted);
-    border-top: 1px solid var(--border);
-    padding: 0.75rem 1.25rem;
-    border-bottom-left-radius: var(--radius-lg) !important;
-    border-bottom-right-radius: var(--radius-lg) !important;
+    background: var(--bg-light);
+    border-top: 1px solid var(--border-color);
+    padding: 0.75rem 1.15rem;
+    border-bottom-left-radius: var(--radius-md) !important;
+    border-bottom-right-radius: var(--radius-md) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -1713,3 +2076,91 @@ body {
         border-spacing: 0 !important;
     }
 }
+
+/* --------------------------------------------------------------------------
+   16. LOGIN PAGE & AUTHENTICATION SHELL (MediPro Matching)
+   -------------------------------------------------------------------------- */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background:
+        radial-gradient(circle at 12% 18%, rgba(59, 130, 246, 0.10) 0%, transparent 42%),
+        radial-gradient(circle at 88% 82%, rgba(20, 184, 166, 0.10) 0%, transparent 42%),
+        var(--bg-light);
+    position: relative;
+    overflow: hidden;
+    font-size: 0.95rem;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 460px;
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 2.8rem 2.5rem 1.8rem 2.5rem;
+    box-shadow: var(--card-shadow-hover);
+    z-index: 10;
+    color: var(--text-main);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+@media (max-width: 576px) {
+    .login-card {
+        padding: 2rem 1.25rem 1.25rem 1.25rem;
+        border-radius: 16px;
+    }
+}
+
+.login-card h4 {
+    font-size: 1.4rem !important;
+    font-weight: 700;
+    margin-top: 0.75rem;
+    color: var(--text-main);
+}
+
+.login-card .form-control {
+    background-color: #ffffff;
+    border: 1px solid #D6DEEA;
+    color: var(--text-main);
+    min-height: 44px;
+    font-size: 0.95rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login-card .form-control:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+.login-card .form-label {
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.login-card .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    min-height: 46px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(20, 184, 166, 0.25);
+}
+
+.login-card .btn-primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(20, 184, 166, 0.35);
+}

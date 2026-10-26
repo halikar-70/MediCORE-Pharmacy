@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'drug_licence_number', 'gstin', 'state', 'state_code',
         'phone', 'email', 'invoice_prefix', 'currency',
         'near_expiry_warning_days', 'default_fefo_behaviour',
-        'allow_expiry_override'
+        'allow_expiry_override', 'audit_log_retention_days'
     ];
 
     $updatedCount = 0;
@@ -69,12 +69,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
 
-<div class="mb-4">
-    <h4 class="fw-bold mb-1 text-dark">
-        <i class="ti ti-settings text-emerald me-1.5"></i> Pharmacy Configuration &amp; Settings
-    </h4>
-    <p class="text-muted small mb-0">Manage pharmacy metadata, drug licensing, tax details, and operational defaults.</p>
-</div>
+
 
 <?php if ($successMsg): ?>
     <div class="alert alert-success rounded-3 p-3 mb-4 d-flex align-items-center gap-2">
@@ -161,6 +156,18 @@ include __DIR__ . '/../../includes/navbar.php';
                     <option value="strict" <?= ($settings['default_fefo_behaviour']['value'] ?? '') === 'strict' ? 'selected' : '' ?>>Strict FEFO</option>
                     <option value="warning" <?= ($settings['default_fefo_behaviour']['value'] ?? '') === 'warning' ? 'selected' : '' ?>>Warning on Non-FEFO</option>
                 </select>
+            </div>
+        </div>
+
+        <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">4. Security &amp; Audit Log Retention</h6>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <label class="form-label small fw-semibold text-dark">Audit Log Retention Window (Days)</label>
+                <div class="input-group">
+                    <input type="number" min="1" max="365" name="audit_log_retention_days" class="form-control" value="<?= sanitize($settings['audit_log_retention_days']['value'] ?? '7') ?>" required>
+                    <span class="input-group-text bg-light text-muted small">days (1 week = 7)</span>
+                </div>
+                <div class="form-text text-muted small">Activities older than this threshold are automatically deleted from the operational audit log. Default is 7 days (1 week).</div>
             </div>
         </div>
 

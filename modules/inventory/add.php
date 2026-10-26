@@ -123,13 +123,7 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-plus text-emerald me-2"></i>Add New Medicine
-            </h4>
-            <p class="text-muted small mb-0">Register a new pharmaceutical formulation in the master catalog.</p>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3">
         <a href="products.php" class="btn btn-outline-secondary rounded-pill px-3 py-2 small">
             <i class="ti ti-arrow-left me-1"></i> Back to Catalog
         </a>

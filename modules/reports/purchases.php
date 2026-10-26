@@ -97,22 +97,13 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
-        <div>
-            <h4 class="fw-bold mb-1 text-dark">
-                <i class="ti ti-truck-delivery text-emerald me-2"></i>Procurement &amp; Supplier Analytics
-            </h4>
-            <p class="text-muted small mb-0">Authoritative registers for purchase bills, supplier accounts, and vendor delivery performance.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="?tab=<?= urlencode($tab) ?>&range=<?= urlencode($preset) ?>&start_date=<?= urlencode($startDate) ?>&end_date=<?= urlencode($endDate) ?>&supplier_id=<?= (int)$supplierId ?>&export=csv" class="btn btn-sm btn-outline-success">
-                <i class="ti ti-file-spreadsheet me-1"></i> Export CSV
-            </a>
-            <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-                <i class="ti ti-printer me-1"></i> Print
-            </button>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2">
+        <a href="?tab=<?= urlencode($tab) ?>&range=<?= urlencode($preset) ?>&start_date=<?= urlencode($startDate) ?>&end_date=<?= urlencode($endDate) ?>&supplier_id=<?= (int)$supplierId ?>&export=csv" class="btn btn-sm btn-outline-success">
+            <i class="ti ti-file-spreadsheet me-1"></i> Export CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="ti ti-printer me-1"></i> Print
+        </button>
     </div>
 
     <!-- Navigation Tabs -->

@@ -23,14 +23,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <div>
-        <h4 class="fw-bold mb-1 text-dark">
-            <i class="ti ti-user-cog text-emerald me-1.5"></i> Pharmacy Staff Accounts
-        </h4>
-        <p class="text-muted small mb-0">Authorized pharmacy operators, pharmacists, cashiers, and managers.</p>
-    </div>
-</div>
+
 
 <div class="card card-custom">
     <div class="card-body p-0">

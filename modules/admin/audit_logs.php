@@ -5,8 +5,6 @@ require_once __DIR__ . '/../../config/app.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../config/session.php';
 require_once __DIR__ . '/../../includes/functions.php';
-require_once __DIR__ . '/../../app/Services/AuditService.php';
-require_once __DIR__ . '/../../app/Services/ExportService.php';
 
 use Pharmacy\Services\AuditService;
 use Pharmacy\Services\ExportService;
@@ -16,11 +14,24 @@ require_permission('pharmacy.audit.view');
 $page_title = 'Audit Trail & Security Events';
 $auditService = new AuditService($pdo);
 
+// Retention policy: activities older than 1 week (7 days) are automatically deleted
+$retentionDays = method_exists($auditService, 'getRetentionDays') ? $auditService->getRetentionDays() : 7;
+$autoPurgedCount = $auditService->purgeOldLogs($retentionDays);
+
+// Manual Purge Action
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'purge_now') {
+    verify_csrf();
+    require_permission('pharmacy.audit.view');
+    $manualPurged = $auditService->purgeOldLogs($retentionDays);
+    flash('success', "Audit trail cleanup completed successfully. {$manualPurged} records older than {$retentionDays} days were purged.");
+    redirect(BASE_URL . 'modules/admin/audit_logs.php');
+}
+
 $tab = $_GET['tab'] ?? 'audit';
 $actionFilter = trim($_GET['action'] ?? '');
 $entityFilter = trim($_GET['entity'] ?? '');
 $userIdFilter = !empty($_GET['user_id']) ? (int)$_GET['user_id'] : null;
-$startDate = $_GET['start_date'] ?? date('Y-m-01');
+$startDate = $_GET['start_date'] ?? date('Y-m-d', strtotime("-{$retentionDays} days"));
 $endDate = $_GET['end_date'] ?? date('Y-m-d');
 $page = max(1, (int)($_GET['page'] ?? 1));
 $limit = 50;
@@ -138,23 +149,35 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
-        <div>
-            <h4 class="fw-bold mb-1 text-dark">
-                <i class="ti ti-shield-lock text-emerald me-2"></i>Audit Trail &amp; Operational Security
-            </h4>
-            <p class="text-muted small mb-0">Immutable, non-destructive ledger recording transactional mutations, authorization events, and security exceptions.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="?tab=<?= urlencode($tab) ?>&start_date=<?= urlencode($startDate) ?>&end_date=<?= urlencode($endDate) ?>&action=<?= urlencode($actionFilter) ?>&entity=<?= urlencode($entityFilter) ?>&user_id=<?= (int)$userIdFilter ?>&export=csv" class="btn btn-sm btn-outline-success">
-                <i class="ti ti-file-spreadsheet me-1"></i> Export CSV
-            </a>
-            <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-                <i class="ti ti-printer me-1"></i> Print
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2">
+        <form method="POST" class="d-inline" onsubmit="return confirm('Purge audit records older than <?= (int)$retentionDays ?> days (1 week)? Activities within the last <?= (int)$retentionDays ?> days will remain intact.');">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="purge_now">
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Clean logs older than <?= (int)$retentionDays ?> days">
+                <i class="ti ti-trash me-1"></i> Clean Expired Logs
             </button>
-        </div>
+        </form>
+        <a href="?tab=<?= urlencode($tab) ?>&start_date=<?= urlencode($startDate) ?>&end_date=<?= urlencode($endDate) ?>&action=<?= urlencode($actionFilter) ?>&entity=<?= urlencode($entityFilter) ?>&user_id=<?= (int)$userIdFilter ?>&export=csv" class="btn btn-sm btn-outline-success">
+            <i class="ti ti-file-spreadsheet me-1"></i> Export CSV
+        </a>
+        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <i class="ti ti-printer me-1"></i> Print
+        </button>
     </div>
+
+    <?php if ($flashSuccess = flash('success')): ?>
+        <div class="alert alert-success rounded-3 p-3 mb-4 d-flex align-items-center gap-2">
+            <i class="ti ti-check fs-5"></i>
+            <span><?= sanitize($flashSuccess) ?></span>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($autoPurgedCount > 0): ?>
+        <div class="alert alert-info rounded-3 p-3 mb-4 d-flex align-items-center gap-2">
+            <i class="ti ti-info-circle fs-5"></i>
+            <span><strong>Automatic Retention Policy:</strong> Automatically cleaned up <?= (int)$autoPurgedCount ?> audit log record(s) older than <?= (int)$retentionDays ?> days. Only the last 1 week of activities is maintained.</span>
+        </div>
+    <?php endif; ?>
 
     <!-- Navigation Tabs -->
     <ul class="nav nav-tabs mb-4">
@@ -234,9 +257,8 @@ include __DIR__ . '/../../includes/navbar.php';
         <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark">
                 <?= $tab === 'security' ? 'Security & Access Violations' : 'Recorded Audit Events' ?> 
-                <span class="text-muted fw-normal small">(<?= number_format($totalLogs) ?> total)</span>
+                <span class="text-muted fw-normal small">(<?= number_format($totalLogs) ?> records)</span>
             </h6>
-            <span class="badge bg-secondary-subtle text-secondary font-monospace">IMMUTABLE LEDGER</span>
         </div>
         <div class="card-body p-0">
             <?php if (empty($logs)): ?>

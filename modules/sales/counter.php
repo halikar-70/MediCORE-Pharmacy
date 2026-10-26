@@ -42,6 +42,75 @@ if (isset($_GET['ajax_preview_fefo'])) {
     exit;
 }
 
+// AJAX Endpoint: Check Active Prescriptions for Selected Patient
+if (isset($_GET['ajax_get_prescriptions'])) {
+    header('Content-Type: application/json');
+    $patId = (int)($_GET['patient_id'] ?? 0);
+    $uhid = trim($_GET['uhid'] ?? '');
+
+    $hPdo = \Pharmacy\Database\Database::getHospitalConnection();
+    if (!$hPdo) {
+        echo json_encode(['success' => false, 'message' => 'Hospital connection unavailable']);
+        exit;
+    }
+
+    $resolvedPatientId = $patId;
+    if ($uhid !== '') {
+        $chk = $hPdo->prepare("SELECT patient_id FROM patients WHERE patient_code = ? LIMIT 1");
+        $chk->execute([$uhid]);
+        $found = $chk->fetchColumn();
+        if ($found) $resolvedPatientId = (int)$found;
+    }
+    if (!$resolvedPatientId && $patId > 0) {
+        $chk = $hPdo->prepare("SELECT hospital_patient_id FROM pharmacy_patients WHERE id = ? LIMIT 1");
+        $chk->execute([$patId]);
+        $found = $chk->fetchColumn();
+        if ($found) $resolvedPatientId = (int)$found;
+    }
+
+    if ($resolvedPatientId <= 0) {
+        echo json_encode(['success' => true, 'data' => []]);
+        exit;
+    }
+
+    try {
+        $prStmt = $hPdo->prepare("
+            SELECT pr.prescription_id, pr.visit_id, pr.admission_id, pr.status, pr.created_at, pr.notes,
+                   d.name as doctor_name, d.specialization as doctor_specialization
+            FROM prescriptions pr
+            LEFT JOIN doctors d ON pr.doctor_id = d.doctor_id
+            WHERE pr.patient_id = ?
+              AND pr.status IN ('Active', 'Ready', 'Partially Dispensed')
+            ORDER BY pr.prescription_id DESC
+        ");
+        $prStmt->execute([$resolvedPatientId]);
+        $prescriptions = $prStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($prescriptions as &$pRow) {
+            $itStmt = $hPdo->prepare("
+                SELECT pi.*, m.medicine_name, m.price as mrp, m.generic_name, m.dosage_form,
+                       COALESCE((
+                           SELECT SUM(quantity_available) 
+                           FROM medicine_batches 
+                           WHERE medicine_id = pi.medicine_id AND status = 'Active' AND quantity_available > 0 AND expiry_date >= CURDATE()
+                       ), 0) as available_stock
+                FROM prescription_items pi
+                LEFT JOIN medicines m ON pi.medicine_id = m.medicine_id
+                WHERE pi.prescription_id = ?
+                  AND pi.status != 'Cancelled'
+            ");
+            $itStmt->execute([$pRow['prescription_id']]);
+            $pRow['items'] = $itStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        unset($pRow);
+
+        echo json_encode(['success' => true, 'data' => $prescriptions]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 $error = null;
 $success = null;
 $completedSale = null;
@@ -167,6 +236,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $hasOverride = has_permission('pharmacy.discount.override');
 
             $patientId = !empty($_POST['patient_id']) ? (int)$_POST['patient_id'] : null;
+            $prescriptionId = !empty($_POST['prescription_id']) ? (int)$_POST['prescription_id'] : null;
+            $admissionId = !empty($_POST['admission_id']) ? (int)$_POST['admission_id'] : (!empty($_GET['admission_id']) ? (int)$_GET['admission_id'] : null);
+            $ipdAdmissionId = !empty($_POST['ipd_admission_id']) ? trim($_POST['ipd_admission_id']) : (!empty($_GET['ipd_id']) ? trim($_GET['ipd_id']) : null);
+            $resolvedSaleType = ($ipdAdmissionId || $admissionId) ? 'IPD_SALE' : ($prescriptionId ? 'PRESCRIPTION_SALE' : 'COUNTER_SALE');
 
             $editingSaleId = (int)($_POST['editing_sale_id'] ?? 0);
             $originalSaleNumber = trim($_POST['original_sale_number'] ?? '');
@@ -178,11 +251,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             $saleData = [
-                'sale_type'        => 'COUNTER_SALE',
+                'sale_type'        => $resolvedSaleType,
                 'customer_name'    => $customerName !== '' ? $customerName : 'Walk-in Customer',
                 'customer_mobile'  => $customerMobile !== '' ? $customerMobile : null,
                 'doctor_name'      => $doctorName !== '' ? $doctorName : null,
                 'patient_id'        => $patientId,
+                'prescription_id'  => $prescriptionId,
+                'admission_id'     => $admissionId,
+                'ipd_admission_id' => $ipdAdmissionId,
                 'discount_percent' => $discountPercent,
                 'idempotency_key'  => $idempotencyKey !== '' ? $idempotencyKey : null,
                 'notes'            => $notes !== '' ? $notes : null
@@ -206,10 +282,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $salesService->recordBillEditHistory($editingSaleId, (int)$completedSale['sale_id'], 'OPD Medicines modified in POS', $_SESSION['user_id'] ?? null);
             }
 
-            if ($editingSaleId > 0 && !empty($originalSaleNumber)) {
+            if (!empty($completedSale['passed_to_medipro'])) {
+                $mediproBill = !empty($completedSale['medipro_bill_id']) ? " (MediPro Bill #{$completedSale['medipro_bill_id']})" : "";
+                $success = "Medicines dispensed and passed to Main MediPro successfully!{$mediproBill} Charges forwarded to Hospital Central Billing as Pending for Patient {$completedSale['customer_name']}. (Pharmacy Sale #{$completedSale['sale_number']}).";
+            } elseif ($editingSaleId > 0 && !empty($originalSaleNumber)) {
                 $success = "Sale updated successfully! New edited Invoice #{$completedSale['sale_number']} generated (Replaced #{$originalSaleNumber}).";
             } else {
-                $success = "Sale completed successfully! Invoice #{$completedSale['sale_number']} generated.";
+                $success = "Walk-in Counter Sale settled in Pharmacy modal successfully! Invoice #{$completedSale['sale_number']} generated.";
             }
         } catch (Exception $e) {
             $error = $e->getMessage();
@@ -848,6 +927,9 @@ include __DIR__ . '/../../includes/navbar.php';
                 <input type="hidden" name="paid_amount" id="hiddenPaidAmount" value="0.0">
                 <input type="hidden" name="payment_ref" id="hiddenPaymentRef" value="">
                 <input type="hidden" name="notes" id="hiddenNotes" value="">
+                <input type="hidden" name="prescription_id" id="hiddenPrescriptionId" value="">
+                <input type="hidden" name="admission_id" id="hiddenAdmissionId" value="<?= htmlspecialchars((string)($_GET['admission_id'] ?? '')) ?>">
+                <input type="hidden" name="ipd_admission_id" id="hiddenIpdAdmissionId" value="<?= htmlspecialchars((string)($_GET['ipd_id'] ?? '')) ?>">
 
                 <!-- Unified Progressive Dispensing Flow -->
                 <div class="unified-dispensing-container">
@@ -947,6 +1029,31 @@ include __DIR__ . '/../../includes/navbar.php';
                                     </datalist>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Prescription Handshake Alert Banner (Auto-detected from Doctor Consultation) -->
+                    <div id="patientPrescriptionBanner" class="p-3 rounded-2 border mb-3 shadow-xs bg-white d-none" style="border-left: 5px solid #059669 !important; background-color: #f0fdf4 !important;">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div class="d-flex align-items-center gap-2.5">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-xs bg-emerald" style="width: 38px; height: 38px; font-size: 1.1rem;">
+                                    <i class="ti ti-clipboard-check"></i>
+                                </div>
+                                <div>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <h6 class="fw-bold text-dark mb-0 fs-6" id="rxBannerTitle">Doctor Prescription Available</h6>
+                                        <span class="badge bg-emerald text-white fw-bold px-2 py-0.5" id="rxBannerBadge" style="font-size: 0.70rem;">Active Rx</span>
+                                    </div>
+                                    <div class="text-muted small mt-0.5" style="font-size: 0.78rem;" id="rxBannerMeta">Prescribed by Attending Doctor</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-success py-1.5 px-3 rounded-pill fw-bold d-inline-flex align-items-center gap-1 shadow-sm" onclick="loadActivePrescriptionToCart()" style="font-size: 0.82rem;">
+                                    <i class="ti ti-download"></i> Load Prescribed Medicines into POS Cart
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-2 pt-2 border-top border-success-subtle text-muted small" id="rxBannerItemsList" style="font-size:0.8rem;">
                         </div>
                     </div>
 
@@ -1246,6 +1353,9 @@ include __DIR__ . '/../../includes/navbar.php';
                         box-shadow: 0 1px 3px rgba(5, 150, 105, 0.3) !important;
                     }
                 </style>
+
+                <!-- Patient Routing & Billing Type Alert Banner -->
+                <div id="modalPatientTypeBanner" class="mb-3 d-none"></div>
 
                 <!-- Patient Summary Strip: 4 Exact Equal-Height Cards -->
                 <div class="opd-patient-strip mb-3">
@@ -1793,6 +1903,7 @@ function selectCounterPatientById(patientId) {
     const p = opdPatientsList.find(x => x.id == patientId);
     if (!p) return;
 
+    document.getElementById('hiddenPatientId').value = p.id;
     document.getElementById('hiddenCustomerName').value = p.name;
     document.getElementById('hiddenCustomerMobile').value = p.mobile || '';
 
@@ -1801,10 +1912,19 @@ function selectCounterPatientById(patientId) {
 
     // Update selected patient card
     const avatarEl = document.getElementById('cardPatientAvatar');
-    if (avatarEl) avatarEl.textContent = p.name.charAt(0).toUpperCase();
+    if (avatarEl) {
+        avatarEl.textContent = p.name.charAt(0).toUpperCase();
+        avatarEl.className = 'rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-xs bg-primary';
+    }
     
     const nameEl = document.getElementById('cardPatientName');
     if (nameEl) nameEl.textContent = p.name;
+
+    const badgeEl = document.getElementById('cardPatientBadge');
+    if (badgeEl) {
+        badgeEl.className = 'badge bg-primary text-white fw-bold px-2 py-0.5';
+        badgeEl.innerHTML = '<i class="ti ti-hospital me-1"></i>Existing Patient &bull; Pass to MediPro';
+    }
 
     const metaEl = document.getElementById('cardPatientMeta');
     if (metaEl) metaEl.textContent = `UHID: ${p.hospital_uhid || p.pharmacy_patient_no || 'OPD'} | Phone: ${p.mobile || '-'}`;
@@ -1829,6 +1949,9 @@ function selectCounterPatientById(patientId) {
     const modalDoc = document.getElementById('modalDoctorInput');
     if (modalDoc) modalDoc.value = defaultDoctor;
 
+    // Check doctor prescriptions for selected patient
+    checkCounterPatientPrescriptions(p.id, p.hospital_uhid);
+
     document.getElementById('counterPatientSuggestionsList').classList.add('d-none');
     selectedCounterPatientIndex = -1;
 
@@ -1842,6 +1965,7 @@ function selectCounterPatientById(patientId) {
 }
 
 function resetToWalkInCustomer() {
+    document.getElementById('hiddenPatientId').value = '';
     document.getElementById('hiddenCustomerName').value = 'Walk-in Customer';
     document.getElementById('hiddenCustomerMobile').value = '';
     document.getElementById('hiddenDoctorName').value = '';
@@ -1855,10 +1979,19 @@ function resetToWalkInCustomer() {
     if (select) select.value = '';
 
     const avatarEl = document.getElementById('cardPatientAvatar');
-    if (avatarEl) avatarEl.textContent = 'W';
+    if (avatarEl) {
+        avatarEl.textContent = 'W';
+        avatarEl.className = 'rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-xs bg-emerald';
+    }
     
     const nameEl = document.getElementById('cardPatientName');
     if (nameEl) nameEl.textContent = 'Walk-in Customer';
+
+    const badgeEl = document.getElementById('cardPatientBadge');
+    if (badgeEl) {
+        badgeEl.className = 'badge bg-emerald text-white fw-bold px-2 py-0.5';
+        badgeEl.innerHTML = '<i class="ti ti-check me-1"></i>Walk-in Customer &bull; Modal Payment';
+    }
 
     const metaEl = document.getElementById('cardPatientMeta');
     if (metaEl) metaEl.textContent = 'UHID: Direct / OPD | Mobile: -';
@@ -1868,6 +2001,13 @@ function resetToWalkInCustomer() {
 
     const mobInp = document.getElementById('displayPatientMobile');
     if (mobInp) mobInp.value = '';
+
+    // Hide prescription banner and reset prescription ID
+    const rxBanner = document.getElementById('patientPrescriptionBanner');
+    if (rxBanner) rxBanner.classList.add('d-none');
+    const rxHidden = document.getElementById('hiddenPrescriptionId');
+    if (rxHidden) rxHidden.value = '';
+    window._activePrescriptionData = null;
 
     const input = document.getElementById('counterPatientSearchInput');
     if (input) input.value = '';
@@ -3133,14 +3273,114 @@ function openBillingPreviewModal() {
 
     recalcModalTotals();
 
+    const patientId = (document.getElementById('hiddenPatientId').value || (document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '')).trim();
+    const isExisting = Boolean(patientId && patientId !== '' && patientId !== '0');
+
+    const typeBannerEl = document.getElementById('modalPatientTypeBanner');
+    const billTypeEl = document.getElementById('modalBillType');
+    const modeSelect = document.getElementById('modalPaymentMode');
+    const btnConfirm = document.getElementById('modalBtnConfirmSale');
+    const tenderedInp = document.getElementById('modalPaidInput');
+    const changeDueLbl = document.getElementById('modalLblChangeOrDue');
+
+    if (isExisting) {
+        if (typeBannerEl) {
+            typeBannerEl.className = 'p-3 rounded-3 border mb-3 d-flex align-items-center gap-3';
+            typeBannerEl.style.backgroundColor = '#eff6ff';
+            typeBannerEl.style.borderColor = '#bfdbfe';
+            typeBannerEl.innerHTML = `
+                <div class="rounded-circle d-flex align-items-center justify-content-center bg-primary text-white shadow-xs" style="width: 40px; height: 40px; min-width: 40px; font-size: 1.15rem;">
+                    <i class="bi bi-hospital"></i>
+                </div>
+                <div>
+                    <div class="fw-bold text-primary mb-0.5" style="font-size: 0.90rem;"><i class="bi bi-person-check-fill me-1"></i>Registered Hospital Patient (MediPro)</div>
+                    <div class="text-secondary small" style="font-size: 0.80rem;">Settle payment directly at the pharmacy counter (Cash / UPI / Card) or select <strong>Hospital Credit / Central Billing</strong>. Transaction and charges sync with MediPro central records.</div>
+                </div>
+            `;
+            typeBannerEl.classList.remove('d-none');
+        }
+        if (billTypeEl) {
+            billTypeEl.className = 'badge rounded-pill fw-bold d-inline-flex align-items-center';
+            billTypeEl.style.backgroundColor = '#eff6ff';
+            billTypeEl.style.color = '#1d4ed8';
+            billTypeEl.style.border = '1px solid #bfdbfe';
+            billTypeEl.innerHTML = '<i class="bi bi-hospital me-1"></i> Hospital Patient Folio';
+        }
+        if (modeSelect) {
+            let opt = modeSelect.querySelector('option[value="HOSPITAL_BILLING"]');
+            if (!opt) {
+                opt = document.createElement('option');
+                opt.value = 'HOSPITAL_BILLING';
+                opt.textContent = 'Hospital Credit / Central Billing (Due)';
+                modeSelect.appendChild(opt);
+            }
+            modeSelect.disabled = false;
+        }
+        if (tenderedInp) {
+            tenderedInp.disabled = false;
+            tenderedInp.value = grandTotal.toFixed(2);
+        }
+        if (btnConfirm) {
+            btnConfirm.className = 'btn btn-emerald text-white text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-2 shadow-xs';
+            btnConfirm.innerHTML = '<i class="bi bi-check-lg me-1.5" style="font-size: 1.1rem;"></i><span>Settle Payment & Complete Sale</span> <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 5px; border-radius: 4px; font-weight: 700;">F9</kbd>';
+        }
+    } else {
+        if (typeBannerEl) {
+            typeBannerEl.className = 'p-3 rounded-3 border mb-3 d-flex align-items-center gap-3';
+            typeBannerEl.style.backgroundColor = '#f0fdf4';
+            typeBannerEl.style.borderColor = '#bbf7d0';
+            typeBannerEl.innerHTML = `
+                <div class="rounded-circle d-flex align-items-center justify-content-center bg-success text-white shadow-xs" style="width: 40px; height: 40px; min-width: 40px; font-size: 1.15rem;">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+                <div>
+                    <div class="fw-bold text-success mb-0.5" style="font-size: 0.90rem;"><i class="bi bi-check-circle-fill me-1"></i>Walk-in Customer &bull; Pharmacy Counter Payment</div>
+                    <div class="text-secondary small" style="font-size: 0.80rem;">Customer is a walk-in / retail buyer. Settle payment directly in this pharmacy modal before completing the sale.</div>
+                </div>
+            `;
+            typeBannerEl.classList.remove('d-none');
+        }
+        if (billTypeEl) {
+            billTypeEl.className = 'badge rounded-pill fw-bold d-inline-flex align-items-center';
+            billTypeEl.style.backgroundColor = '#ecfdf5';
+            billTypeEl.style.color = '#047857';
+            billTypeEl.style.border = '1px solid #a7f3d0';
+            billTypeEl.innerHTML = '<i class="bi bi-check2 me-1"></i> Retail Modal Folio';
+        }
+        if (modeSelect) {
+            modeSelect.disabled = false;
+            let opt = modeSelect.querySelector('option[value="HOSPITAL_BILLING"]');
+            if (opt) opt.remove();
+            if (modeSelect.value === 'HOSPITAL_BILLING') {
+                modeSelect.value = 'CASH';
+            }
+        }
+        if (tenderedInp) {
+            tenderedInp.disabled = false;
+            tenderedInp.value = grandTotal.toFixed(2);
+        }
+        if (btnConfirm) {
+            btnConfirm.className = 'btn btn-emerald text-white text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-2 shadow-xs';
+            btnConfirm.innerHTML = '<i class="bi bi-check-lg me-1.5" style="font-size: 1.1rem;"></i><span>Collect Payment & Complete Sale</span> <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 5px; border-radius: 4px; font-weight: 700;">F9</kbd>';
+        }
+    }
+    recalcModalChange();
+
     const previewModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('billingPreviewModal'));
     previewModal.show();
 
-    // Automatically focus the Settlement Mode when modal opens
+    // Automatically focus the Settlement Mode when modal opens (if walk-in)
     setTimeout(() => {
-        const modeSelect = document.getElementById('modalPaymentMode');
-        if (modeSelect) {
-            modeSelect.focus();
+        if (!isExisting) {
+            const modeSelectEl = document.getElementById('modalPaymentMode');
+            if (modeSelectEl && !modeSelectEl.disabled) {
+                modeSelectEl.focus();
+            }
+        } else {
+            const btnConfirmEl = document.getElementById('modalBtnConfirmSale');
+            if (btnConfirmEl) {
+                btnConfirmEl.focus();
+            }
         }
     }, 350);
 }
@@ -3308,6 +3548,34 @@ function onModalPaymentModeChange(mode) {
         } else {
             refGroup.classList.add('d-none');
         }
+    }
+    const tenderedInp = document.getElementById('modalPaidInput');
+    const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
+    const btnConfirm = document.getElementById('modalBtnConfirmSale');
+    if (mode === 'HOSPITAL_BILLING' || mode === 'CREDIT') {
+        if (tenderedInp) {
+            tenderedInp.value = '0.00';
+            tenderedInp.disabled = true;
+        }
+        const changeDueLbl = document.getElementById('modalLblChangeOrDue');
+        if (changeDueLbl) {
+            changeDueLbl.className = 'fw-bold font-monospace text-primary fs-6';
+            changeDueLbl.textContent = 'Charged to Hospital Due (Pending)';
+        }
+        if (btnConfirm) {
+            btnConfirm.innerHTML = '<i class="bi bi-send-check me-1.5" style="font-size: 1.1rem;"></i><span>Charge to Hospital Credit</span> <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 5px; border-radius: 4px; font-weight: 700;">F9</kbd>';
+        }
+    } else {
+        if (tenderedInp) {
+            tenderedInp.disabled = false;
+            if (parseFloat(tenderedInp.value) <= 0 || isNaN(parseFloat(tenderedInp.value))) {
+                tenderedInp.value = grandTotal.toFixed(2);
+            }
+        }
+        if (btnConfirm) {
+            btnConfirm.innerHTML = '<i class="bi bi-check-lg me-1.5" style="font-size: 1.1rem;"></i><span>Collect Payment & Complete Sale</span> <kbd class="kbd-chip ms-1.5" style="background: rgba(255,255,255,0.25); color: #fff; font-size: 0.72rem; padding: 2px 5px; border-radius: 4px; font-weight: 700;">F9</kbd>';
+        }
+        recalcModalChange();
     }
 }
 
@@ -3495,8 +3763,10 @@ function submitFinalSale() {
         return;
     }
 
+    const patientId = (document.getElementById('hiddenPatientId').value || (document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '')).trim();
+    const isExisting = Boolean(patientId && patientId !== '' && patientId !== '0');
+
     const grandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
-    const paidAmount = parseFloat(document.getElementById('modalPaidInput').value) || grandTotal;
     const discountType = document.getElementById('modalDiscountType') ? document.getElementById('modalDiscountType').value : 'PERCENT';
     const discountVal = parseFloat(document.getElementById('modalDiscountValue')?.value) || 0.0;
     const subtotal = parseFloat(document.getElementById('modalLblSubtotal').textContent.replace('₹', '')) || 0.0;
@@ -3508,13 +3778,25 @@ function submitFinalSale() {
         discountPercent = Math.min(50.0, discountVal);
     }
 
-    const paymentMode = document.getElementById('modalPaymentMode').value;
-    const paymentRef = document.getElementById('modalPaymentRef').value.trim();
+    let paidAmount = 0.0;
+    let paymentMode = document.getElementById('modalPaymentMode').value;
+    let paymentRef = document.getElementById('modalPaymentRef').value.trim();
+
+    if (paymentMode === 'HOSPITAL_BILLING' || paymentMode === 'CREDIT') {
+        paidAmount = 0.00;
+        paymentMode = 'Hospital Billing';
+        if (!paymentRef) paymentRef = 'Hospital Credit / Forwarded';
+    } else {
+        paidAmount = parseFloat(document.getElementById('modalPaidInput').value);
+        if (isNaN(paidAmount) || paidAmount < 0) {
+            paidAmount = grandTotal;
+        }
+    }
+
     const doctor = document.getElementById('modalDoctorInput').value.trim();
     const notes = document.getElementById('modalNotesInput').value.trim();
     const customerName = document.getElementById('modalPatientName').textContent.trim() || 'Walk-in Customer';
     const customerMobile = document.getElementById('modalPatientMobile').textContent.trim() === '-' ? '' : document.getElementById('modalPatientMobile').textContent.trim();
-    const patientId = document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '';
 
     // Populate all hidden form inputs
     document.getElementById('cartItemsJson').value = JSON.stringify(cart);
@@ -3535,7 +3817,11 @@ function submitFinalSale() {
 
     const btn = document.getElementById('modalBtnConfirmSale');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Generating Bill...';
+    if (paymentMode === 'Hospital Billing') {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Charging to Hospital Credit...';
+    } else {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Settling Modal Payment...';
+    }
 
     HTMLFormElement.prototype.submit.call(document.getElementById('posSaleForm'));
 }
@@ -3665,7 +3951,169 @@ document.addEventListener('DOMContentLoaded', function() {
             pInput.select();
         }
     }, 150);
+
+    // Auto-select patient from URL if passed (e.g. from MediPro profile ?patient_id=X&uhid=Y)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlPatId = urlParams.get('patient_id');
+    const urlUhid = urlParams.get('uhid');
+    if (urlPatId || urlUhid) {
+        const foundPat = opdPatientsList.find(p => (urlPatId && p.id == urlPatId) || (urlUhid && (p.hospital_uhid == urlUhid || p.pharmacy_patient_no == urlUhid)));
+        if (foundPat) {
+            selectCounterPatientById(foundPat.id);
+        } else if (urlPatId) {
+            checkCounterPatientPrescriptions(parseInt(urlPatId), urlUhid || '');
+        }
+    }
 });
+
+// Prescription Handshake Suite (OPD & IPD Doctor Prescriptions)
+window._activePrescriptionData = null;
+
+function checkCounterPatientPrescriptions(patientId, uhid) {
+    const banner = document.getElementById('patientPrescriptionBanner');
+    if (!banner) return;
+    
+    if (!patientId && !uhid) {
+        banner.classList.add('d-none');
+        window._activePrescriptionData = null;
+        return;
+    }
+
+    fetch(`counter.php?ajax_get_prescriptions=1&patient_id=${patientId}&uhid=${encodeURIComponent(uhid || '')}`)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success && res.data && res.data.length > 0) {
+                const rx = res.data[0]; // pick latest active prescription
+                window._activePrescriptionData = rx;
+
+                const rxHidden = document.getElementById('hiddenPrescriptionId');
+                if (rxHidden) rxHidden.value = rx.prescription_id;
+
+                const titleEl = document.getElementById('rxBannerTitle');
+                if (titleEl) titleEl.textContent = `Doctor Prescription Available (RX-${String(rx.prescription_id).padStart(5, '0')})`;
+
+                const metaEl = document.getElementById('rxBannerMeta');
+                const itemCount = (rx.items || []).length;
+                if (metaEl) metaEl.textContent = `Prescribed by Dr. ${rx.doctor_name || 'Attending Doctor'} on ${rx.created_at} \u2022 ${itemCount} medication item(s)`;
+
+                const itemsListEl = document.getElementById('rxBannerItemsList');
+                if (itemsListEl && rx.items) {
+                    let itemsHtml = `<div class="fw-semibold text-success mb-1"><i class="ti ti-pill me-1"></i>Prescribed Medicines:</div><div class="d-flex flex-wrap gap-2">`;
+                    rx.items.forEach(it => {
+                        const hasStock = parseInt(it.available_stock || 0) > 0;
+                        const stockBadge = hasStock 
+                            ? `<span class="badge bg-success-subtle text-success">Stock: ${it.available_stock}</span>`
+                            : `<span class="badge bg-danger-subtle text-danger">Out of Stock</span>`;
+                        itemsHtml += `
+                            <span class="p-1 px-2 rounded bg-white border border-success-subtle d-inline-flex align-items-center gap-1.5">
+                                <strong>${escapeHtml(it.medicine_name)}</strong>
+                                <span class="text-muted">(Qty: ${it.quantity})</span>
+                                ${stockBadge}
+                            </span>
+                        `;
+                    });
+                    itemsHtml += `</div>`;
+                    itemsListEl.innerHTML = itemsHtml;
+                }
+
+                banner.classList.remove('d-none');
+            } else {
+                banner.classList.add('d-none');
+                window._activePrescriptionData = null;
+                const rxHidden = document.getElementById('hiddenPrescriptionId');
+                if (rxHidden) rxHidden.value = '';
+            }
+        })
+        .catch(err => {
+            console.error("Prescription fetch error:", err);
+            banner.classList.add('d-none');
+        });
+}
+
+function loadActivePrescriptionToCart() {
+    const rx = window._activePrescriptionData;
+    if (!rx || !rx.items || rx.items.length === 0) {
+        alert("No items found in active prescription.");
+        return;
+    }
+
+    let addedCount = 0;
+    rx.items.forEach(it => {
+        const medId = parseInt(it.medicine_id);
+        const reqQty = parseInt(it.quantity || 1);
+
+        // Find medicine in catalog
+        const med = catalogMedicines.find(m => m.medicine_id === medId);
+        if (med) {
+            // Pick FEFO batch
+            let batchNumber = med.batch_number || 'GEN-01';
+            let batchId = med.batch_id || 0;
+            let expiry = med.expiry_date || 'N/A';
+            let mfgRate = parseFloat(med.purchase_price || 0);
+            let price = parseFloat(med.mrp || med.price || 0);
+            let maxStock = parseInt(med.available_stock || med.stock_quantity || 999);
+
+            if (Array.isArray(med.batches) && med.batches.length > 0) {
+                const availableBatch = med.batches.find(b => parseInt(b.stock) > 0) || med.batches[0];
+                if (availableBatch) {
+                    batchNumber = availableBatch.batch_number;
+                    batchId = availableBatch.batch_id;
+                    expiry = availableBatch.expiry_date;
+                    mfgRate = parseFloat(availableBatch.purchase_price || 0);
+                    price = parseFloat(availableBatch.sale_price || med.mrp || 0);
+                    maxStock = parseInt(availableBatch.stock || 0);
+                }
+            }
+
+            const existingIdx = cart.findIndex(c => c.medicine_id === medId);
+            if (existingIdx !== -1) {
+                cart[existingIdx].quantity = reqQty;
+            } else {
+                cart.push({
+                    medicine_id: med.medicine_id,
+                    medicine_name: med.medicine_name,
+                    generic_name: med.generic_name || '',
+                    composition: med.composition || '',
+                    batch_id: batchId,
+                    batch_number: batchNumber,
+                    manufacturer: med.manufacturer || '',
+                    expiry_date: expiry,
+                    purchase_price: mfgRate,
+                    category: med.category || 'General',
+                    unit: med.dosage_form || med.unit || 'unit',
+                    quantity: reqQty,
+                    price: price,
+                    max_stock: maxStock > 0 ? maxStock : 999,
+                    gst_percent: parseFloat(med.gst_percent || 0)
+                });
+            }
+            addedCount++;
+        }
+    });
+
+    if (rx.doctor_name) {
+        const docInp = document.getElementById('displayDoctorName');
+        if (docInp) docInp.value = rx.doctor_name;
+        const hiddenDoc = document.getElementById('hiddenDoctorName');
+        if (hiddenDoc) hiddenDoc.value = rx.doctor_name;
+        const modalDoc = document.getElementById('modalDoctorInput');
+        if (modalDoc) modalDoc.value = rx.doctor_name;
+    }
+
+    renderCart();
+    calculateFinalTotal();
+
+    const banner = document.getElementById('patientPrescriptionBanner');
+    if (banner) {
+        banner.innerHTML = `
+            <div class="d-flex align-items-center justify-content-between p-2 text-success fw-bold">
+                <div><i class="ti ti-check-double me-1"></i> Loaded ${addedCount} prescribed medication(s) into POS Cart! (Prescription #RX-${String(rx.prescription_id).padStart(5, '0')})</div>
+                <button type="button" class="btn btn-xs btn-outline-success rounded-pill" onclick="this.parentElement.parentElement.classList.add('d-none')">Dismiss</button>
+            </div>
+        `;
+    }
+    showAutoAddNotice(`Prescription loaded: ${addedCount} medicine(s) added to cart!`, 'success');
+}
 </script>
 
 <?php

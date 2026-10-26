@@ -205,6 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } else {
         try {
             $patientId = !empty($_POST['patient_id']) ? (int)$_POST['patient_id'] : null;
+            $admissionId = (int)($_POST['admission_id'] ?? 0);
             $customerName = trim($_POST['patient_name'] ?? '');
             $hospitalUhid = trim($_POST['hospital_uhid'] ?? '');
             $ipdAdmissionId = trim($_POST['ipd_admission_no'] ?? '');
@@ -330,6 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $saleData = [
                 'sale_type'        => 'IPD_SALE',
+                'admission_id'     => $admissionId > 0 ? $admissionId : null,
                 'patient_id'       => $patientId,
                 'customer_name'    => $customerName !== '' ? $customerName : 'IPD Patient',
                 'ipd_admission_id' => $ipdAdmissionId,
@@ -363,7 +365,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $salesService->recordBillEditHistory($editingSaleId, (int)$completedSale['sale_id'], 'IPD Inpatient Medicines modified in POS', $_SESSION['user_id'] ?? null);
             }
 
-            if ($editingSaleId > 0 && !empty($originalSaleNumber)) {
+            if (!empty($completedSale['passed_to_medipro'])) {
+                $mediproBill = !empty($completedSale['medipro_bill_id']) ? " (MediPro Bill #{$completedSale['medipro_bill_id']})" : "";
+                $success = "Inpatient Medicines dispensed and passed to Main MediPro successfully!{$mediproBill} Charges (₹" . number_format($completedSale['grand_total'], 2) . ") forwarded to Hospital Central Billing as Pending for Patient {$completedSale['customer_name']}. (Pharmacy Sale #{$completedSale['sale_number']}).";
+            } elseif ($editingSaleId > 0 && !empty($originalSaleNumber)) {
                 $success = "IPD Sale updated successfully! New edited Invoice #{$completedSale['sale_number']} generated (Replaced #{$originalSaleNumber}).";
             } else {
                 $success = "IPD Sale #{$completedSale['sale_number']} charged successfully to {$customerName}!";
@@ -1151,6 +1156,7 @@ include __DIR__ . '/../../includes/navbar.php';
 
                     <!-- Hidden inputs for patient details -->
                     <input type="hidden" name="patient_id" id="inpPatientId" value="">
+                    <input type="hidden" name="admission_id" id="inpAdmissionId" value="">
                     <input type="hidden" name="patient_name" id="inpPatientName" value="" required>
                     <input type="hidden" name="hospital_uhid" id="inpHospitalUhid" value="">
                     <input type="hidden" name="ipd_admission_no" id="inpIpdAdmissionNo" value="">
@@ -2142,6 +2148,7 @@ function selectPatient(p) {
 
     // Set hidden form inputs
     if (document.getElementById('inpPatientId')) document.getElementById('inpPatientId').value = p.patient_id || '';
+    if (document.getElementById('inpAdmissionId')) document.getElementById('inpAdmissionId').value = p.admission_id || '';
     if (document.getElementById('inpPatientName')) document.getElementById('inpPatientName').value = p.name || '';
     if (document.getElementById('inpHospitalUhid')) document.getElementById('inpHospitalUhid').value = p.hospital_uhid || '';
     if (document.getElementById('inpIpdAdmissionNo')) document.getElementById('inpIpdAdmissionNo').value = p.ipd_admission_no || '';
@@ -4520,6 +4527,25 @@ function submitFinalSale() {
 
 document.addEventListener('DOMContentLoaded', function() {
     renderAdmittedPatientsTable(ipdPatientsList);
+
+    // Auto-select patient from URL params (e.g. ?admission_id=7 or ?uhid=VH007 or ?patient_id=7)
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetAdmId = urlParams.get('admission_id') || urlParams.get('ipd_admission_id');
+    const targetIpdNo = urlParams.get('ipd_no') || urlParams.get('ipd_number');
+    const targetUhid = urlParams.get('uhid') || urlParams.get('patient_code');
+    const targetPatId = urlParams.get('patient_id') || urlParams.get('id');
+
+    if (!<?= $editSale ? 'true' : 'false' ?> && (targetAdmId || targetIpdNo || targetUhid || targetPatId)) {
+        const matchP = ipdPatientsList.find(x => 
+            (targetAdmId && x.admission_id == targetAdmId) ||
+            (targetIpdNo && x.ipd_admission_no && x.ipd_admission_no.toLowerCase() === targetIpdNo.toLowerCase()) ||
+            (targetUhid && x.hospital_uhid && x.hospital_uhid.toLowerCase() === targetUhid.toLowerCase()) ||
+            (targetPatId && (x.patient_id == targetPatId || x.hospital_patient_id == targetPatId))
+        );
+        if (matchP) {
+            selectPatient(matchP);
+        }
+    }
 
     <?php if ($editSale && !empty($editSaleItems)): ?>
         // PRE-POPULATE IPD DATA FROM BILL BEING EDITED

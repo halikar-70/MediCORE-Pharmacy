@@ -49,20 +49,35 @@ class Database
 
     /**
      * Optional connection to Hospital/MediPro database for controlled integration queries.
-     * Returns null if hospital database is unreachable, without crashing the Pharmacy application.
+     * Returns the shared connection if both point to the unified database, or opens a dedicated connection if configured differently.
      *
      * @return PDO|null
      */
     public static function getHospitalConnection(): ?PDO
     {
-        if (self::$hospitalPdo === null) {
-            $host = getenv('HOSPITAL_DB_HOST') ?: '127.0.0.1';
-            $port = getenv('HOSPITAL_DB_PORT') ?: '3306';
-            $dbname = getenv('HOSPITAL_DB_NAME') ?: 'hospital_db';
-            $user = getenv('HOSPITAL_DB_USER') ?: 'root';
-            $pass = getenv('HOSPITAL_DB_PASS') !== false ? getenv('HOSPITAL_DB_PASS') : '';
+        $hHost = getenv('HOSPITAL_DB_HOST') ?: '127.0.0.1';
+        $hPort = getenv('HOSPITAL_DB_PORT') ?: '3306';
+        $hDbname = getenv('HOSPITAL_DB_NAME') ?: 'hospital_db';
+        $hUser = getenv('HOSPITAL_DB_USER') ?: 'root';
+        $hPass = getenv('HOSPITAL_DB_PASS') !== false ? getenv('HOSPITAL_DB_PASS') : '';
 
-            $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
+        $pHost = getenv('PHARMACY_DB_HOST') ?: '127.0.0.1';
+        $pPort = getenv('PHARMACY_DB_PORT') ?: '3306';
+        $pDbname = getenv('PHARMACY_DB_NAME') ?: 'pharmacy_db';
+        $pUser = getenv('PHARMACY_DB_USER') ?: 'root';
+        $pPass = getenv('PHARMACY_DB_PASS') !== false ? getenv('PHARMACY_DB_PASS') : '';
+
+        // If both point to the same database configuration, reuse the single PDO instance
+        if ($hHost === $pHost && $hPort === $pPort && $hDbname === $pDbname && $hUser === $pUser && $hPass === $pPass) {
+            try {
+                return self::getPharmacyConnection();
+            } catch (Exception $e) {
+                return null;
+            }
+        }
+
+        if (self::$hospitalPdo === null) {
+            $dsn = "mysql:host={$hHost};port={$hPort};dbname={$hDbname};charset=utf8mb4";
             $options = [
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -70,7 +85,7 @@ class Database
             ];
 
             try {
-                self::$hospitalPdo = new PDO($dsn, $user, $pass, $options);
+                self::$hospitalPdo = new PDO($dsn, $hUser, $hPass, $options);
                 self::$hospitalPdo->exec("SET time_zone = '+05:30'");
             } catch (PDOException $e) {
                 error_log("Hospital DB Connection Notice (non-fatal): " . $e->getMessage());

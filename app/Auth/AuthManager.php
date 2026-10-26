@@ -82,9 +82,12 @@ class AuthManager
 
         $_SESSION['pharmacy_logged_in'] = true;
         $_SESSION['pharmacy_user_id'] = (int)$user['id'];
+        $_SESSION['user_id'] = (int)$user['id'];
         $_SESSION['pharmacy_username'] = $user['username'];
+        $_SESSION['username'] = $user['username'];
         $_SESSION['pharmacy_full_name'] = $user['full_name'];
         $_SESSION['pharmacy_role_id'] = (int)$user['role_id'];
+        $_SESSION['role_id'] = (int)$user['role_id'];
         $_SESSION['pharmacy_role_name'] = $user['role_name'];
 
         // Update last login timestamp

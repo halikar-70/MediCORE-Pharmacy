@@ -90,25 +90,16 @@ include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="container-fluid px-4 py-3">
-    <!-- Header -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
-        <div>
-            <h4 class="fw-bold text-dark mb-1">
-                <i class="ti ti-packages text-emerald me-2"></i>Batch Master & Current Stock
-            </h4>
-            <p class="text-muted small mb-0">First Expiry First Out (FEFO) physical inventory tracking, shelf life, and batch audit.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="opening_stock.php" class="btn btn-emerald text-white rounded-pill px-3 py-2 small" style="background-color: #059669;">
-                <i class="ti ti-plus me-1"></i> Add Batch
-            </a>
-            <a href="adjustments.php" class="btn btn-outline-warning rounded-pill px-3 py-2 small">
-                <i class="ti ti-adjustments me-1"></i> Stock Adjustment
-            </a>
-            <a href="expiry.php" class="btn btn-outline-danger rounded-pill px-3 py-2 small">
-                <i class="ti ti-calendar-due me-1"></i> Expiry Dashboard
-            </a>
-        </div>
+    <div class="d-flex justify-content-end align-items-center mb-3 gap-2 flex-wrap">
+        <a href="opening_stock.php" class="btn btn-emerald text-white rounded-pill px-3 py-2 small" style="background-color: #059669;">
+            <i class="ti ti-plus me-1"></i> Add Batch
+        </a>
+        <a href="adjustments.php" class="btn btn-outline-warning rounded-pill px-3 py-2 small">
+            <i class="ti ti-adjustments me-1"></i> Stock Adjustment
+        </a>
+        <a href="expiry.php" class="btn btn-outline-danger rounded-pill px-3 py-2 small">
+            <i class="ti ti-calendar-due me-1"></i> Expiry Dashboard
+        </a>
     </div>
 
     <!-- Quick Stats -->
