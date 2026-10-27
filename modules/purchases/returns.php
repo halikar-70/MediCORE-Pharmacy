@@ -340,7 +340,7 @@ include __DIR__ . '/../../includes/navbar.php';
                         <div class="col-md-9">
                             <div class="input-group">
                                 <span class="input-group-text bg-light border-end-0"><i class="ti ti-search"></i></span>
-                                <input type="text" id="invSearchInput" class="form-control border-start-0" placeholder="Enter Internal Invoice (PINV-), Supplier Bill Number, or Supplier Name...">
+                                <input type="text" id="invSearchInput" class="form-control border-start-0" placeholder="Enter Internal Invoice (VP/PINV/...), Supplier Bill Number, or Supplier Name...">
                             </div>
                         </div>
                         <div class="col-md-3">

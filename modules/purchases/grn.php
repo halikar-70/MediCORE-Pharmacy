@@ -287,7 +287,7 @@ if ($isPrint) {
             <div class="col-6">
                 <div class="p-3 border rounded">
                     <div class="fw-bold text-uppercase small text-muted mb-1">Received From Supplier:</div>
-                    <div class="fw-bold fs-6"><?= htmlspecialchars($viewGrn['supplier_name']) ?> (<?= htmlspecialchars($viewGrn['supplier_code']) ?>)</div>
+                    <div class="fw-bold fs-6"><?= htmlspecialchars($viewGrn['supplier_name'] ?? '') ?><?= !empty($viewGrn['supplier_code']) ? ' (' . htmlspecialchars($viewGrn['supplier_code']) . ')' : '' ?></div>
                     <div class="small">GSTIN: <span class="font-monospace"><?= htmlspecialchars($viewGrn['supplier_gstin'] ?? 'N/A') ?></span></div>
                     <div class="small">Vendor Invoice No: <strong class="font-monospace"><?= htmlspecialchars($viewGrn['supplier_invoice_no'] ?? 'N/A') ?></strong></div>
                 </div>
@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="col-md-6">
                         <div class="p-3 border rounded-3 bg-light">
                             <div class="text-muted small">Supplier Details:</div>
-                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewGrn['supplier_name']) ?> (<?= htmlspecialchars($viewGrn['supplier_code']) ?>)</h6>
+                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewGrn['supplier_name'] ?? '') ?><?= !empty($viewGrn['supplier_code']) ? ' (' . htmlspecialchars($viewGrn['supplier_code']) . ')' : '' ?></h6>
                             <div class="small">Vendor Invoice: <strong class="font-monospace"><?= htmlspecialchars($viewGrn['supplier_invoice_no'] ?? 'N/A') ?></strong></div>
                             <div class="small">GSTIN: <span class="font-monospace"><?= htmlspecialchars($viewGrn['supplier_gstin'] ?? 'N/A') ?></span></div>
                         </div>

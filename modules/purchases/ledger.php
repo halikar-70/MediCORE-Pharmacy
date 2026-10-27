@@ -60,7 +60,7 @@ if ($isPrint) {
             </div>
             <div class="text-end">
                 <h4 class="fw-bold mb-0">STATEMENT OF ACCOUNT</h4>
-                <div class="fw-bold"><?= htmlspecialchars($sup['supplier_name']) ?> (<?= htmlspecialchars($sup['supplier_code']) ?>)</div>
+                <div class="fw-bold"><?= htmlspecialchars($sup['supplier_name'] ?? '') ?><?= !empty($sup['supplier_code']) ? ' (' . htmlspecialchars($sup['supplier_code']) . ')' : '' ?></div>
                 <div class="small">As of: <?= date('d-M-Y') ?></div>
             </div>
         </div>
@@ -141,7 +141,7 @@ include __DIR__ . '/../../includes/navbar.php';
                     <select name="supplier_id" class="form-select bg-light border-0" onchange="this.form.submit()">
                         <?php foreach ($suppliersList as $s): ?>
                             <option value="<?= $s['supplier_id'] ?>" <?= $supplierId === (int)$s['supplier_id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($s['supplier_name']) ?> (<?= htmlspecialchars($s['supplier_code']) ?>)
+                                <?= htmlspecialchars($s['supplier_name'] ?? '') ?><?= !empty($s['supplier_code']) ? ' (' . htmlspecialchars($s['supplier_code']) . ')' : '' ?>
                             </option>
                         <?php endforeach; ?>
                     </select>

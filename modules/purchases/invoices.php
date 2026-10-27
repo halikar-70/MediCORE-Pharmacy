@@ -395,15 +395,15 @@ if ($isPrint) {
                 <div class="header-box">
                     <div class="header-line">
                         <span class="header-label">Bill Record:</span>
-                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['invoice_number']) ?></strong></span>
+                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['invoice_number'] ?? '') ?></strong></span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">Vendor Bill:</span>
-                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['supplier_invoice_no']) ?></strong></span>
+                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['supplier_invoice_no'] ?? '') ?></strong></span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">Bill Date:</span>
-                        <span class="header-val"><?= date('d-M-Y', strtotime($viewInv['invoice_date'])) ?></span>
+                        <span class="header-val"><?= !empty($viewInv['invoice_date']) ? date('d-M-Y', strtotime($viewInv['invoice_date'])) : '' ?></span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">PO Ref:</span>
@@ -411,14 +411,14 @@ if ($isPrint) {
                     </div>
                     <div class="header-line">
                         <span class="header-label">Payment:</span>
-                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['payment_status']) ?></strong></span>
+                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['payment_status'] ?? '') ?></strong></span>
                     </div>
                 </div>
 
                 <div class="header-box">
                     <div class="header-line">
                         <span class="header-label">Supplier:</span>
-                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['supplier_name']) ?></strong></span>
+                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['supplier_name'] ?? '') ?></strong></span>
                     </div>
                     <div class="header-line">
                         <span class="header-label">Address:</span>
@@ -434,7 +434,7 @@ if ($isPrint) {
                     </div>
                     <div class="header-line">
                         <span class="header-label">3-Way Match:</span>
-                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['match_status']) ?></strong></span>
+                        <span class="header-val"><strong><?= htmlspecialchars($viewInv['match_status'] ?? '') ?></strong></span>
                     </div>
                 </div>
             </div>
@@ -494,11 +494,11 @@ if ($isPrint) {
                     <div>
                         <div class="summary-line">
                             <span class="summary-label">Reconciliation Status:</span>
-                            <span class="summary-val text-success">VERIFIED &amp; MATCHED (<?= htmlspecialchars($viewInv['match_status']) ?>)</span>
+                            <span class="summary-val text-success">VERIFIED &amp; MATCHED (<?= htmlspecialchars($viewInv['match_status'] ?? '') ?>)</span>
                         </div>
                         <div class="summary-line">
                             <span class="summary-label">Payment Mode:</span>
-                            <span class="summary-val"><?= htmlspecialchars($viewInv['payment_status']) ?></span>
+                            <span class="summary-val"><?= htmlspecialchars($viewInv['payment_status'] ?? '') ?></span>
                         </div>
                     </div>
                     <div style="font-size: 10px; color: #555; margin-top: 10px;">
@@ -659,17 +659,27 @@ include __DIR__ . '/../../includes/navbar.php';
                         </tr>
                     <?php else: ?>
                         <?php foreach ($invoices as $inv): ?>
-                            <tr>
+                            <tr class="<?= ($inv['payment_status'] ?? '') === 'CANCELLED' ? 'table-light text-muted' : '' ?>">
                                 <td class="ps-4">
-                                    <div class="fw-bold text-dark"><?= htmlspecialchars($inv['invoice_number']) ?></div>
-                                    <div class="text-muted small"><?= date('d-M-Y', strtotime($inv['invoice_date'])) ?></div>
+                                    <div class="d-flex align-items-center gap-1.5">
+                                        <a href="invoices.php?view_id=<?= $inv['invoice_id'] ?>" class="fw-bold font-monospace text-dark text-decoration-none d-inline-flex align-items-center gap-1.5 hover-primary" style="font-size: 0.88rem;" title="View Purchase Bill #<?= htmlspecialchars($inv['invoice_number'] ?? '') ?>">
+                                            <i class="ti ti-file-invoice text-emerald opacity-75" style="font-size: 0.95rem;"></i>
+                                            <span><?= htmlspecialchars($inv['invoice_number'] ?? '') ?></span>
+                                        </a>
+                                    </div>
+                                    <div class="text-muted small d-inline-flex align-items-center gap-1" style="margin-top: 3px; font-size: 0.75rem;">
+                                        <i class="ti ti-calendar text-secondary" style="font-size: 0.8rem;"></i>
+                                        <span><?= !empty($inv['invoice_date']) ? date('d-M-Y', strtotime($inv['invoice_date'])) : '—' ?></span>
+                                    </div>
                                 </td>
                                 <td>
-                                    <div class="fw-semibold text-dark"><?= htmlspecialchars($inv['supplier_name']) ?></div>
-                                    <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($inv['supplier_code']) ?></span>
+                                    <div class="fw-semibold text-dark"><?= htmlspecialchars($inv['supplier_name'] ?? '') ?></div>
+                                    <?php if (!empty($inv['supplier_code'])): ?>
+                                        <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($inv['supplier_code']) ?></span>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="fw-bold font-monospace text-dark"><?= htmlspecialchars($inv['supplier_invoice_no']) ?></span>
+                                    <span class="fw-bold font-monospace text-dark"><?= htmlspecialchars($inv['supplier_invoice_no'] ?? '') ?></span>
                                 </td>
                                 <td>
                                     <?php if (!empty($inv['grn_number'])): ?>
@@ -680,47 +690,73 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end fw-bold text-dark">
-                                    ₹<?= number_format((float)$inv['grand_total'], 2) ?>
+                                    ₹<?= number_format((float)($inv['grand_total'] ?? 0), 2) ?>
                                 </td>
-                                <td class="text-end fw-bold <?= (float)$inv['outstanding_amount'] > 0 ? 'text-danger' : 'text-success' ?>">
-                                    ₹<?= number_format((float)$inv['outstanding_amount'], 2) ?>
+                                <td class="text-end fw-bold <?= (float)($inv['outstanding_amount'] ?? 0) > 0 ? 'text-danger' : 'text-success' ?>">
+                                    ₹<?= number_format((float)($inv['outstanding_amount'] ?? 0), 2) ?>
                                 </td>
                                 <td>
-                                    <?php if ($inv['match_status'] === 'MATCHED'): ?>
+                                    <?php if (($inv['match_status'] ?? '') === 'MATCHED'): ?>
                                         <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="ti ti-check me-1"></i>Matched</span>
                                     <?php else: ?>
-                                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="ti ti-alert-triangle me-1"></i><?= htmlspecialchars($inv['match_status']) ?></span>
+                                        <span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="ti ti-alert-triangle me-1"></i><?= htmlspecialchars($inv['match_status'] ?? 'PENDING') ?></span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php
-                                        $payBadge = match($inv['payment_status']) {
+                                        $payBadge = match($inv['payment_status'] ?? '') {
                                             'PAID' => 'success',
                                             'PARTIALLY_PAID' => 'warning',
                                             default => 'danger'
                                         };
                                     ?>
                                     <span class="badge bg-<?= $payBadge ?>-subtle text-<?= $payBadge ?> rounded-pill px-2 py-1">
-                                        <?= htmlspecialchars($inv['payment_status']) ?>
+                                        <?= htmlspecialchars($inv['payment_status'] ?? 'UNPAID') ?>
                                     </span>
                                 </td>
-                                <td class="text-end pe-4">
-                                    <div class="d-flex justify-content-end gap-1">
-                                        <a href="invoices.php?view_id=<?= $inv['invoice_id'] ?>" class="btn btn-sm btn-light border rounded-pill px-2" title="View Details">
+                                <td class="text-end pe-4 text-nowrap">
+                                    <div class="d-inline-flex align-items-center justify-content-end flex-nowrap" style="gap: 6px;">
+                                        <!-- View Button with Icon and Name -->
+                                        <a href="invoices.php?view_id=<?= $inv['invoice_id'] ?>" class="btn-action-pill btn-action-view" title="View Purchase Bill #<?= htmlspecialchars($inv['invoice_number'] ?? '') ?>">
                                             <i class="ti ti-eye"></i>
+                                            <span>View</span>
                                         </a>
-                                        <?php if ($canEdit && $inv['payment_status'] !== 'PAID'): ?>
-                                            <a href="invoices.php?edit_id=<?= $inv['invoice_id'] ?>" class="btn btn-sm btn-light border rounded-pill px-2" title="Edit Bill">
+
+                                        <!-- Yellow Edit Button with Icon and Name -->
+                                        <?php if ($canEdit && ($inv['payment_status'] ?? '') !== 'PAID' && ($inv['payment_status'] ?? '') !== 'CANCELLED'): ?>
+                                            <a href="invoices.php?edit_id=<?= $inv['invoice_id'] ?>" class="btn-action-pill btn-action-edit" title="Edit Purchase Bill">
                                                 <i class="ti ti-edit"></i>
+                                                <span>Edit</span>
                                             </a>
+                                        <?php else: ?>
+                                            <span class="btn-action-pill btn-action-disabled" title="<?= ($inv['payment_status'] ?? '') === 'PAID' ? 'Fully paid bills cannot be edited' : 'Cancelled bills cannot be edited' ?>">
+                                                <i class="ti ti-edit"></i>
+                                                <span>Edit</span>
+                                            </span>
                                         <?php endif; ?>
-                                        <a href="invoices.php?view_id=<?= $inv['invoice_id'] ?>&print=1" target="_blank" class="btn btn-sm btn-light border rounded-pill px-2" title="Print Bill">
+
+                                        <!-- Print Button with Icon and Name -->
+                                        <a href="invoices.php?view_id=<?= $inv['invoice_id'] ?>&print=1" target="_blank" class="btn-action-pill btn-action-print" title="Print Purchase Bill">
                                             <i class="ti ti-printer"></i>
+                                            <span>Print</span>
                                         </a>
-                                        <?php if ((float)$inv['outstanding_amount'] > 0): ?>
-                                            <a href="payments.php?invoice_id=<?= $inv['invoice_id'] ?>&supplier_id=<?= $inv['supplier_id'] ?>" class="btn btn-sm btn-outline-success rounded-pill px-2" title="Record Payment">
+
+                                        <!-- Pay Button with Icon and Name -->
+                                        <?php if (($inv['payment_status'] ?? '') !== 'CANCELLED' && (float)($inv['outstanding_amount'] ?? 0) > 0): ?>
+                                            <a href="payments.php?invoice_id=<?= $inv['invoice_id'] ?>&supplier_id=<?= $inv['supplier_id'] ?>" class="btn-action-pill btn-action-pay" title="Record Payment (Outstanding: ₹<?= number_format((float)$inv['outstanding_amount'], 2) ?>)">
                                                 <i class="ti ti-cash"></i>
+                                                <span>Pay</span>
                                             </a>
+                                        <?php elseif (($inv['payment_status'] ?? '') === 'PAID'): ?>
+                                            <span class="btn-action-pill btn-action-paid" title="Bill Settled in Full (₹0.00 Due)">
+                                                <i class="ti ti-circle-check"></i>
+                                                <span>Paid</span>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="btn-action-pill btn-action-disabled" title="Cancelled Bill">
+                                                <i class="ti ti-ban"></i>
+                                                <span>Pay</span>
+                                            </span>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -766,8 +802,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <select name="supplier_id" id="invSupplierSelect" class="form-select" required>
                                 <option value="">-- Choose Vendor --</option>
                                 <?php foreach ($activeSuppliers as $sup): ?>
-                                    <option value="<?= $sup['supplier_id'] ?>" data-terms="<?= htmlspecialchars($sup['payment_terms']) ?>" <?= ($editInv && (int)$editInv['supplier_id'] === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($sup['supplier_name']) ?>
+                                    <option value="<?= $sup['supplier_id'] ?>" data-terms="<?= htmlspecialchars($sup['payment_terms'] ?? '') ?>" <?= ($editInv && (int)$editInv['supplier_id'] === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($sup['supplier_name'] ?? '') ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -992,8 +1028,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="col-md-6">
                         <div class="p-3 border rounded-3 bg-light">
                             <div class="text-muted small">Supplier & Vendor Bill:</div>
-                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewInv['supplier_name']) ?> (<?= htmlspecialchars($viewInv['supplier_code']) ?>)</h6>
-                            <div class="small">Vendor Invoice No: <strong class="font-monospace"><?= htmlspecialchars($viewInv['supplier_invoice_no']) ?></strong></div>
+                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewInv['supplier_name'] ?? '') ?><?= !empty($viewInv['supplier_code']) ? ' (' . htmlspecialchars($viewInv['supplier_code']) . ')' : '' ?></h6>
+                            <div class="small">Vendor Invoice No: <strong class="font-monospace"><?= htmlspecialchars($viewInv['supplier_invoice_no'] ?? '') ?></strong></div>
                             <div class="small">GSTIN: <span class="font-monospace"><?= htmlspecialchars($viewInv['supplier_gstin'] ?? 'N/A') ?></span></div>
                         </div>
                     </div>

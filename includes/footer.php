@@ -73,39 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
-
-    // 2. Mobile & Tablet Drawer Toggling
-    const sidebar = document.getElementById('appSidebar');
-    const backdrop = document.getElementById('sidebarBackdrop');
-    const toggleBtn = document.getElementById('sidebarToggleBtn');
-    const closeBtn = document.getElementById('sidebarCloseBtn');
-
-    function openSidebar() {
-        if (sidebar) sidebar.classList.add('show');
-        if (backdrop) backdrop.classList.add('show');
-        document.body.style.overflow = 'hidden';
-    }
-
-    function closeSidebar() {
-        if (sidebar) sidebar.classList.remove('show');
-        if (backdrop) backdrop.classList.remove('show');
-        document.body.style.overflow = '';
-    }
-
-    if (toggleBtn) toggleBtn.addEventListener('click', openSidebar);
-    if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
-    if (backdrop) backdrop.addEventListener('click', closeSidebar);
-
-    // Auto-close drawer when clicking a link on mobile screens (< 992px)
-    if (sidebar) {
-        sidebar.querySelectorAll('.sidebar-submenu .nav-link, a.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth < 992) {
-                    closeSidebar();
-                }
-            });
-        });
-    }
 });
 </script>
 </body>

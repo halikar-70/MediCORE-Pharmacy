@@ -70,6 +70,14 @@ class DocumentSequenceService
                     $padLength = (int)$row['pad_length'];
                     $currentVal = (int)$row['current_value'];
                     $nextVal = $currentVal + 1;
+
+                    // Annual sequence rollover when year changes (e.g. 26 -> 27)
+                    if (!empty($row['updated_at']) && (str_contains($prefix, '{YR}') || str_contains($prefix, '{YEAR2}') || str_contains($prefix, '{FY}'))) {
+                        $lastYear = date('y', strtotime($row['updated_at']));
+                        if ($lastYear !== date('y')) {
+                            $nextVal = 1;
+                        }
+                    }
                 }
 
                 // Update counter
@@ -84,8 +92,12 @@ class DocumentSequenceService
                     $this->pdo->commit();
                 }
 
+                // Resolve dynamic year tokens in prefix (e.g. {YR} or {FY} -> 26, automatically 27 in year 2027)
+                $year2 = date('y');
+                $resolvedPrefix = str_replace(['{YR}', '{YEAR2}', '{FY}', '{YEAR}'], [$year2, $year2, $year2, date('Y')], $prefix);
+
                 // Format document number
-                return $prefix . str_pad((string)$nextVal, $padLength, '0', STR_PAD_LEFT);
+                return $resolvedPrefix . str_pad((string)$nextVal, $padLength, '0', STR_PAD_LEFT);
 
             } catch (Exception $e) {
                 if ($manageTx && $this->pdo->inTransaction()) {

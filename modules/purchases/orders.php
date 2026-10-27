@@ -998,8 +998,10 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <div class="text-muted small"><?= date('d-M-Y', strtotime($o['po_date'])) ?></div>
                                 </td>
                                 <td>
-                                    <div class="fw-semibold text-dark"><?= htmlspecialchars($o['supplier_name']) ?></div>
-                                    <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($o['supplier_code']) ?></span>
+                                    <div class="fw-semibold text-dark"><?= htmlspecialchars($o['supplier_name'] ?? '') ?></div>
+                                    <?php if (!empty($o['supplier_code'])): ?>
+                                        <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($o['supplier_code']) ?></span>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <div class="text-dark small fw-semibold"><?= (int)$o['item_count'] ?> Products</div>
@@ -1105,8 +1107,8 @@ include __DIR__ . '/../../includes/navbar.php';
                             <select name="supplier_id" class="form-select" required>
                                 <option value="">-- Choose Vendor --</option>
                                 <?php foreach ($activeSuppliers as $sup): ?>
-                                    <option value="<?= $sup['supplier_id'] ?>" data-terms="<?= htmlspecialchars($sup['payment_terms']) ?>" <?= ($editPo && (int)$editPo['supplier_id'] === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($sup['supplier_name']) ?> (<?= htmlspecialchars($sup['supplier_code']) ?>)
+                                    <option value="<?= $sup['supplier_id'] ?>" data-terms="<?= htmlspecialchars($sup['payment_terms'] ?? '') ?>" <?= ($editPo && (int)$editPo['supplier_id'] === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($sup['supplier_name'] ?? '') ?><?= !empty($sup['supplier_code']) ? ' (' . htmlspecialchars($sup['supplier_code']) . ')' : '' ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -1353,7 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="col-md-6">
                         <div class="p-3 border rounded-3 bg-light">
                             <div class="text-muted small">Supplier Details:</div>
-                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewPo['supplier_name']) ?> (<?= htmlspecialchars($viewPo['supplier_code']) ?>)</h6>
+                            <h6 class="fw-bold mb-1"><?= htmlspecialchars($viewPo['supplier_name'] ?? '') ?><?= !empty($viewPo['supplier_code']) ? ' (' . htmlspecialchars($viewPo['supplier_code']) . ')' : '' ?></h6>
                             <div class="small">GSTIN: <span class="font-monospace"><?= htmlspecialchars($viewPo['supplier_gstin'] ?? 'N/A') ?></span> | Phone: <?= htmlspecialchars($viewPo['supplier_phone'] ?? '—') ?></div>
                             <div class="small"><?= htmlspecialchars($viewPo['supplier_address'] ?? '') ?>, <?= htmlspecialchars($viewPo['supplier_city'] ?? '') ?></div>
                         </div>

@@ -642,6 +642,7 @@ if (empty($categories)) {
 $currentUser = auth_user();
 $page_title = 'Create IPD Bill';
 
+$hide_navbar = true;
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
@@ -1002,6 +1003,9 @@ include __DIR__ . '/../../includes/navbar.php';
             <!-- Header matching reference image -->
             <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-icon btn-light d-lg-none me-1 flex-shrink-0" id="sidebarToggleBtn" type="button" aria-label="Toggle Navigation Sidebar">
+                        <i class="ti ti-menu-2 fs-5"></i>
+                    </button>
                     <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; border-radius: 12px; background-color: #f0fdf4; color: #0d9488; border: 1px solid #99f6e4;">
                         <i class="bi bi-hospital fs-4"></i>
                     </div>
@@ -1357,8 +1361,8 @@ include __DIR__ . '/../../includes/navbar.php';
                                 Total: ₹0.00
                             </span>
                         </div>
-                        <div class="card border rounded-3 shadow-xs" style="overflow: visible !important;">
-                            <div class="table-responsive" style="overflow: visible !important;">
+                        <div class="card border rounded-3 shadow-xs pos-cart-card">
+                            <div class="table-responsive pos-cart-table-wrap">
                                 <table class="table table-hover align-middle mb-0" id="cartTable">
                                     <thead class="table-light small text-muted text-uppercase" style="font-size: 0.74rem;">
                                         <tr>
@@ -3490,7 +3494,7 @@ function renderCart() {
                     <div class="fw-bold text-dark fs-6" style="line-height: 1.25;">${escapeHtml(item.medicine_name)}</div>
                     <div class="text-muted small" style="font-size: 0.72rem; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 3px;">
                         <span class="badge font-monospace" style="background:#e0e7ff; color:#3730a3; font-size:0.68rem; padding: 1px 6px; border-radius: 4px;"><i class="ti ti-package me-1"></i>Batch: ${escapeHtml(item.batch_number || 'GEN-01')}</span>
-                        ${item.manufacturer ? '<span class="text-primary fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}Cat: ${escapeHtml(item.category)} &bull; ${escapeHtml(item.unit)} &bull; Stock: ${item.max_stock}
+                        Cat: ${escapeHtml(item.category)} &bull; ${escapeHtml(item.unit)} &bull; Stock: ${item.max_stock}
                     </div>
                 </td>
                 <td class="align-middle">
@@ -3961,7 +3965,6 @@ function openBillingPreviewModal() {
                         </div>
                     ` : ''}
                     <div class="text-muted small mt-0.5 d-flex align-items-center flex-wrap" style="font-size: 0.74rem; gap: 4px;">
-                        ${item.manufacturer ? '<span class="text-primary fw-medium">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}
                         <span>${escapeHtml(item.category)}</span> &bull; 
                         <span class="badge bg-light text-dark border px-1.5 py-0.2">${escapeHtml(item.unit)}</span>
                     </div>

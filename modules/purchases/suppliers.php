@@ -455,8 +455,10 @@ include __DIR__ . '/../../includes/navbar.php';
         <div class="modal-content rounded-4 border-0">
             <div class="modal-header border-0 px-4 pt-4">
                 <div>
-                    <h5 class="fw-bold mb-0 text-dark"><i class="ti ti-id text-emerald me-2"></i><?= htmlspecialchars($viewSupplier['supplier_name']) ?></h5>
-                    <span class="badge bg-secondary-subtle text-secondary font-monospace"><?= htmlspecialchars($viewSupplier['supplier_code']) ?></span>
+                    <h5 class="fw-bold mb-0 text-dark"><i class="ti ti-id text-emerald me-2"></i><?= htmlspecialchars($viewSupplier['supplier_name'] ?? '') ?></h5>
+                    <?php if (!empty($viewSupplier['supplier_code'])): ?>
+                        <span class="badge bg-secondary-subtle text-secondary font-monospace"><?= htmlspecialchars($viewSupplier['supplier_code']) ?></span>
+                    <?php endif; ?>
                     <span class="badge bg-<?= $viewSupplier['status'] === 'Active' ? 'success' : ($viewSupplier['status'] === 'Blocked' ? 'danger' : 'secondary') ?>-subtle text-<?= $viewSupplier['status'] === 'Active' ? 'success' : ($viewSupplier['status'] === 'Blocked' ? 'danger' : 'secondary') ?> ms-1">
                         <?= $viewSupplier['status'] ?>
                     </span>

@@ -53,20 +53,31 @@ $adminActive = is_group_active(['modules/admin/'], $currentUri);
     </div>
 
     <!-- User Profile Card (MediPro Style) -->
+    <?php
+        $rawName = $user['full_name'] ?? $user['username'] ?? 'Pharmacy Admin';
+        $cleanName = str_ireplace('Pharmacy Administrator', 'Pharmacy Admin', $rawName);
+        $userRole = strtoupper($user['role_name'] ?? 'ADMIN');
+        $userInitial = strtoupper(substr($user['username'] ?? ($cleanName ?? 'A'), 0, 1));
+    ?>
     <div class="sidebar-user-card">
-        <div class="avatar-pill">
-            <?= strtoupper(substr($user['username'] ?? 'P', 0, 1)) ?>
-        </div>
-        <div class="d-flex flex-column overflow-hidden flex-grow-1" style="min-width: 0;">
-            <div class="sidebar-user-name text-truncate" title="<?= sanitize($user['full_name'] ?? 'Staff') ?>">
-                <?= sanitize($user['full_name'] ?? $user['username'] ?? 'Staff') ?>
+        <div class="position-relative flex-shrink-0">
+            <div class="avatar-pill">
+                <?= $userInitial ?>
             </div>
-            <div class="sidebar-user-role text-truncate">
-                <?= sanitize($user['role_name'] ?? 'Pharmacist') ?>
+            <span class="avatar-status-dot" title="Online"></span>
+        </div>
+        <div class="d-flex flex-column overflow-hidden flex-grow-1" style="min-width: 0; gap: 2px;">
+            <div class="sidebar-user-name text-truncate" title="<?= sanitize($cleanName) ?>">
+                <?= sanitize($cleanName) ?>
+            </div>
+            <div>
+                <span class="sidebar-role-badge">
+                    <?= sanitize($userRole) ?>
+                </span>
             </div>
         </div>
-        <a href="<?= BASE_URL ?>logout.php" class="text-muted text-hover-danger p-1" title="Sign Out">
-            <i class="ti ti-power fs-6"></i>
+        <a href="<?= BASE_URL ?>logout.php" class="sidebar-logout-btn" title="Sign Out">
+            <i class="ti ti-power"></i>
         </a>
     </div>
 
@@ -92,40 +103,76 @@ $adminActive = is_group_active(['modules/admin/'], $currentUri);
 
         <div class="sidebar-group-title mt-2">Operations</div>
 
-        <!-- 2. SALES (Collapsible) -->
-        <div class="sidebar-group">
-            <button class="sidebar-group-header menu-sales <?= $salesActive ? 'active-group open' : '' ?>" type="button" data-group="groupSales" aria-expanded="<?= $salesActive ? 'true' : 'false' ?>">
-                <div class="d-flex align-items-center gap-2">
-                    <div class="sidebar-icon-wrap">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M3 3H5.2L7.1 14.2C7.3 15.3 8.2 16 9.3 16H18.2C19.2 16 20.1 15.3 20.3 14.3L21.7 7.5C21.9 6.7 21.2 6 20.4 6H6.1" stroke="#0d9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <rect x="8.5" y="8" width="4.5" height="5" rx="1" fill="#14b8a6"/>
-                            <rect x="14" y="9.5" width="4" height="3.5" rx="0.8" fill="#5eead4"/>
-                            <path d="M10.75 9.5V11.5M9.75 10.5H11.75" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>
-                            <circle cx="9.5" cy="19.5" r="1.8" fill="#0f766e"/>
-                            <circle cx="9.5" cy="19.5" r="0.6" fill="#ffffff"/>
-                            <circle cx="17.5" cy="19.5" r="1.8" fill="#0f766e"/>
-                            <circle cx="17.5" cy="19.5" r="0.6" fill="#ffffff"/>
-                        </svg>
-                    </div>
-                    <span>Sales &amp; POS</span>
+        <!-- 2. SALES & POS (Direct Top-Level Items - No Dropdown) -->
+        <div class="nav-item">
+            <a class="nav-link menu-sales-counter <?= is_nav_active('modules/sales/counter.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/counter.php">
+                <div class="sidebar-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 3H5.2L7.1 14.2C7.3 15.3 8.2 16 9.3 16H18.2C19.2 16 20.1 15.3 20.3 14.3L21.7 7.5C21.9 6.7 21.2 6 20.4 6H6.1" stroke="#0d9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <rect x="8.5" y="8" width="4.5" height="5" rx="1" fill="#14b8a6"/>
+                        <rect x="14" y="9.5" width="4" height="3.5" rx="0.8" fill="#5eead4"/>
+                        <path d="M10.75 9.5V11.5M9.75 10.5H11.75" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>
+                        <circle cx="9.5" cy="19.5" r="1.8" fill="#0f766e"/>
+                        <circle cx="9.5" cy="19.5" r="0.6" fill="#ffffff"/>
+                        <circle cx="17.5" cy="19.5" r="1.8" fill="#0f766e"/>
+                        <circle cx="17.5" cy="19.5" r="0.6" fill="#ffffff"/>
+                    </svg>
                 </div>
-                <i class="ti ti-chevron-down group-chevron"></i>
-            </button>
-            <div class="sidebar-submenu <?= $salesActive ? 'show' : '' ?>" id="groupSales">
-                <a class="nav-link <?= is_nav_active('modules/sales/counter.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/counter.php">
-                    <span>OPD Counter Sale</span>
-                </a>
-                <a class="nav-link <?= is_nav_active('modules/sales/regular.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/regular.php">
-                    <span>Regular / IPD Sale</span>
-                </a>
-                <a class="nav-link <?= is_nav_active('modules/sales/monitoring.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/monitoring.php">
-                    <span>Sale Monitoring</span>
-                </a>
-                <a class="nav-link <?= is_nav_active('modules/sales/returns.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/returns.php">
-                    <span>Sale Returns</span>
-                </a>
-            </div>
+                <span>OPD Counter Sale</span>
+            </a>
+        </div>
+
+        <div class="nav-item">
+            <a class="nav-link menu-sales-regular <?= is_nav_active('modules/sales/regular.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/regular.php">
+                <div class="sidebar-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="3" width="16" height="18" rx="2" fill="#0284c7" />
+                        <rect x="7" y="7" width="10" height="2" rx="1" fill="#ffffff" />
+                        <rect x="7" y="11" width="6" height="2" rx="1" fill="#bae6fd" />
+                        <path d="M13 14H17M15 12V16" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>
+                        <circle cx="8" cy="15" r="1.2" fill="#38bdf8"/>
+                    </svg>
+                </div>
+                <span>Regular / IPD Sale</span>
+            </a>
+        </div>
+
+        <div class="nav-item">
+            <a class="nav-link menu-sales-monitoring <?= is_nav_active('modules/sales/monitoring.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/monitoring.php">
+                <div class="sidebar-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="3" width="20" height="14" rx="2" stroke="#6366f1" stroke-width="1.8" fill="#eef2ff"/>
+                        <path d="M5 13L9 9L13 12L19 6" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M8 21H16M12 17V21" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+                        <circle cx="19" cy="6" r="1.5" fill="#4338ca"/>
+                    </svg>
+                </div>
+                <span>Sale Monitoring</span>
+            </a>
+        </div>
+
+        <div class="nav-item">
+            <a class="nav-link menu-sales-returns <?= is_nav_active('modules/sales/returns.php', $currentUri) ?>" href="<?= BASE_URL ?>modules/sales/returns.php">
+                <div class="sidebar-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Receipt Document Body -->
+                        <path d="M4 3.5C4 2.67157 4.67157 2 5.5 2H13.5L18 6.5V20.5C18 21.3284 17.3284 22 16.5 22H5.5C4.67157 22 4 21.3284 4 20.5V3.5Z" fill="#f43f5e"/>
+                        <!-- Folded Receipt Corner -->
+                        <path d="M13.5 2V6.5H18L13.5 2Z" fill="#fda4af"/>
+                        <!-- Receipt Text Lines -->
+                        <rect x="6.5" y="6.5" width="5" height="1.8" rx="0.9" fill="#ffffff"/>
+                        <rect x="6.5" y="10" width="8" height="1.8" rx="0.9" fill="#ffe4e6"/>
+                        <rect x="6.5" y="13.5" width="4.5" height="1.8" rx="0.9" fill="#ffe4e6"/>
+                        <!-- Circular Refund/Return Badge with White Outer Depth Ring -->
+                        <circle cx="15" cy="15.5" r="5.5" fill="#ffffff"/>
+                        <circle cx="15" cy="15.5" r="4.6" fill="#e11d48"/>
+                        <!-- White Refund U-Turn Arrow -->
+                        <path d="M16.5 13.8C16.5 12.8 15.7 12.2 14.8 12.2C13.8 12.2 13 13 13 14C13 15 13.8 15.8 14.8 15.8H16.8" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/>
+                        <path d="M14.2 11.3L12.8 12.4L14.2 13.5" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span>Sale Returns</span>
+            </a>
         </div>
 
         <!-- 3. PURCHASE (Collapsible) -->

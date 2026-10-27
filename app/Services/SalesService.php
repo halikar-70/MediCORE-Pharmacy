@@ -1176,7 +1176,9 @@ class SalesService
         }
 
         if (!empty($filters['payment_status'])) {
-            if ($filters['payment_status'] === 'OVERPAID' || $filters['payment_status'] === 'OVERPAYMENT_DUE') {
+            if ($filters['payment_status'] === 'OUTSTANDING' || $filters['payment_status'] === 'DUE') {
+                $where[] = "(s.balance_amount > 0.009 AND s.status != 'CANCELLED')";
+            } elseif ($filters['payment_status'] === 'OVERPAID' || $filters['payment_status'] === 'OVERPAYMENT_DUE') {
                 $where[] = "(s.paid_amount > s.grand_total AND s.status != 'CANCELLED')";
             } else {
                 $where[] = "s.payment_status = ?";
@@ -1189,8 +1191,14 @@ class SalesService
         }
 
         if (!empty($filters['status'])) {
-            $where[] = "s.status = ?";
-            $params[] = $filters['status'];
+            if ($filters['status'] === 'OUTSTANDING' || $filters['status'] === 'DUE') {
+                $where[] = "(s.balance_amount > 0.009 AND s.status != 'CANCELLED')";
+            } elseif ($filters['status'] === 'COMPLETED') {
+                $where[] = "(s.balance_amount <= 0.009 AND s.status = 'COMPLETED')";
+            } else {
+                $where[] = "s.status = ?";
+                $params[] = $filters['status'];
+            }
         }
 
         if (!empty($filters['start_date'])) {

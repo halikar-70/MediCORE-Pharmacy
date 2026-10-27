@@ -348,7 +348,7 @@ include __DIR__ . '/../../includes/navbar.php';
                         <option value="">-- All Suppliers (Click to Dropdown Bills) --</option>
                         <?php foreach ($activeSuppliers as $sup): ?>
                             <option value="<?= $sup['supplier_id'] ?>" <?= $supplierId === (int)$sup['supplier_id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($sup['supplier_name']) ?> (<?= htmlspecialchars($sup['supplier_code']) ?>)
+                                <?= htmlspecialchars($sup['supplier_name'] ?? '') ?><?= !empty($sup['supplier_code']) ? ' (' . htmlspecialchars($sup['supplier_code']) . ')' : '' ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -381,8 +381,10 @@ include __DIR__ . '/../../includes/navbar.php';
                             </div>
                             <div>
                                 <div class="d-flex align-items-center gap-2">
-                                    <h4 class="fw-bold text-dark mb-0"><?= htmlspecialchars($selectedSupplier['supplier_name']) ?></h4>
-                                    <span class="badge bg-secondary font-monospace"><?= htmlspecialchars($selectedSupplier['supplier_code']) ?></span>
+                                    <h4 class="fw-bold text-dark mb-0"><?= htmlspecialchars($selectedSupplier['supplier_name'] ?? '') ?></h4>
+                                    <?php if (!empty($selectedSupplier['supplier_code'])): ?>
+                                        <span class="badge bg-secondary font-monospace"><?= htmlspecialchars($selectedSupplier['supplier_code']) ?></span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="text-muted small mt-1">
                                     <i class="ti ti-user me-1"></i><?= htmlspecialchars($selectedSupplier['contact_person'] ?: 'N/A') ?>
@@ -716,9 +718,11 @@ include __DIR__ . '/../../includes/navbar.php';
                                     </td>
                                     <td>
                                         <div class="fw-bold text-dark fs-6">
-                                            <?= htmlspecialchars($s['supplier_name']) ?>
+                                            <?= htmlspecialchars($s['supplier_name'] ?? '') ?>
                                         </div>
-                                        <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($s['supplier_code']) ?></span>
+                                        <?php if (!empty($s['supplier_code'])): ?>
+                                            <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($s['supplier_code']) ?></span>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div class="text-dark small fw-semibold"><?= htmlspecialchars($s['contact_person'] ?: 'N/A') ?></div>
@@ -956,9 +960,11 @@ include __DIR__ . '/../../includes/navbar.php';
                                     </td>
                                     <td>
                                         <a href="payments.php?supplier_id=<?= $p['supplier_id'] ?>" class="fw-semibold text-dark text-decoration-none">
-                                            <?= htmlspecialchars($p['supplier_name']) ?>
+                                            <?= htmlspecialchars($p['supplier_name'] ?? '') ?>
                                         </a>
-                                        <div><span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($p['supplier_code']) ?></span></div>
+                                        <?php if (!empty($p['supplier_code'])): ?>
+                                            <div><span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($p['supplier_code']) ?></span></div>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <span class="badge bg-light border text-dark"><?= htmlspecialchars($p['payment_mode']) ?></span>
@@ -991,104 +997,108 @@ include __DIR__ . '/../../includes/navbar.php';
 <!-- ===================================================================== -->
 <?php if ($canCreate): ?>
 <div class="modal fade" id="createPaymentModal" tabindex="-1" aria-labelledby="createPaymentModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content rounded-4 border-0 shadow-lg">
+    <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width: 1080px;">
+        <div class="modal-content rounded-4 border-0 shadow-lg overflow-hidden">
             <form method="POST" action="payments.php" id="paymentForm">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="create_payment">
 
-                <div class="modal-header bg-success text-white border-0 px-4 py-3">
-                    <h5 class="fw-bold mb-0" id="createPaymentModalLabel">
-                        <i class="ti ti-cash me-2"></i>Record Supplier Disbursement & Settle Bills
-                    </h5>
+                <div class="modal-header bg-success text-white border-0 px-4 py-2.5">
+                    <h6 class="modal-title fw-bold mb-0 d-flex align-items-center" id="createPaymentModalLabel">
+                        <i class="ti ti-cash me-2 fs-5"></i>Record Supplier Disbursement &amp; Settle Bills
+                    </h6>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body px-4 py-3">
-                    <div class="row g-3 mb-3 p-3 bg-light rounded-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-semibold" id="modalSupplierLabel">Supplier Name *</label>
-                            
-                            <!-- Direct Supplier Display (shown directly when paying for a specific supplier) -->
-                            <div id="supplierDirectCard" class="d-none align-items-center justify-content-between p-2 px-3 bg-white border border-success-subtle rounded-3 shadow-xs" style="min-height: 42px;">
-                                <div class="d-flex align-items-center text-truncate me-2">
-                                    <span class="badge bg-success-subtle text-success me-2 p-1 px-2 rounded-2">
-                                        <i class="ti ti-building-store fs-6"></i>
-                                    </span>
-                                    <div class="text-truncate">
-                                        <span class="fw-bold text-dark d-block text-truncate" id="supplierDirectNameText">--</span>
-                                    </div>
+                <div class="modal-body px-4 py-2.5">
+                    <!-- Compact Top Row of Form Fields -->
+                    <div class="p-2.5 px-3 bg-light rounded-3 mb-2 border">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-4">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-bold text-muted text-uppercase mb-0" style="font-size: 0.72rem;" id="modalSupplierLabel">Supplier *</label>
+                                    <button type="button" id="btnChangeSupplier" class="btn btn-link p-0 text-decoration-none small text-primary d-none" style="font-size: 0.72rem;" onclick="enableSupplierSelectChange()">Change</button>
                                 </div>
-                                <span class="badge bg-light text-secondary border font-monospace" id="supplierDirectCodeText">SUP</span>
-                            </div>
+                                
+                                <!-- Direct Supplier Display Card -->
+                                <div id="supplierDirectCard" class="d-none align-items-center justify-content-between p-1.5 px-2.5 bg-white border border-success-subtle rounded-3 shadow-xs" style="min-height: 32px;">
+                                    <div class="d-flex align-items-center text-truncate me-1">
+                                        <i class="ti ti-building-store text-success me-1.5 fs-6"></i>
+                                        <span class="fw-bold text-dark text-truncate small" id="supplierDirectNameText">--</span>
+                                    </div>
+                                    <span class="badge bg-light text-secondary border font-monospace" style="font-size: 0.68rem;" id="supplierDirectCodeText">SUP</span>
+                                </div>
 
-                            <!-- Supplier Select (hidden when direct supplier is active) -->
-                            <select name="supplier_id" id="modalSupplierSelect" class="form-select" required onchange="onSupplierDropdownChanged(this.value)">
-                                <option value="">-- Choose Vendor / Supplier --</option>
-                                <?php foreach ($activeSuppliers as $sup): ?>
-                                    <option value="<?= $sup['supplier_id'] ?>" data-name="<?= htmlspecialchars($sup['supplier_name']) ?>" data-code="<?= htmlspecialchars($sup['supplier_code']) ?>" <?= ((int)$presetSupplierId === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($sup['supplier_name']) ?> (<?= htmlspecialchars($sup['supplier_code']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small fw-semibold">Payment Date *</label>
-                            <input type="date" name="payment_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small fw-semibold">Total Amount Paid (₹) *</label>
-                            <input type="number" step="0.01" name="amount" id="totalPaymentAmount" class="form-control fw-bold text-success fs-6" required placeholder="0.00" oninput="validateAllocationSum()">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-semibold">Payment Mode / Tender *</label>
-                            <select name="payment_mode" class="form-select" required>
-                                <option value="Bank Transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
-                                <option value="UPI">UPI / Digital QR</option>
-                                <option value="Cheque">Cheque</option>
-                                <option value="Cash">Cash</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-semibold">UTR / Cheque / Ref Number</label>
-                            <input type="text" name="reference_no" id="modalRefNo" class="form-control font-monospace" placeholder="e.g. UTR-982138219">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label small fw-semibold">Drawee / Bank Name</label>
-                            <input type="text" name="bank_name" class="form-control" placeholder="e.g. State Bank of India">
+                                <!-- Supplier Select Dropdown -->
+                                <select name="supplier_id" id="modalSupplierSelect" class="form-select form-select-sm fw-semibold" required onchange="onSupplierDropdownChanged(this.value)">
+                                    <option value="">-- Choose Vendor / Supplier --</option>
+                                    <?php foreach ($activeSuppliers as $sup): ?>
+                                        <option value="<?= $sup['supplier_id'] ?>" data-name="<?= htmlspecialchars($sup['supplier_name'] ?? '') ?>" data-code="<?= htmlspecialchars($sup['supplier_code'] ?? '') ?>" <?= ((int)$presetSupplierId === (int)$sup['supplier_id']) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($sup['supplier_name'] ?? '') ?><?= !empty($sup['supplier_code']) ? ' (' . htmlspecialchars($sup['supplier_code']) . ')' : '' ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-2 col-sm-6">
+                                <label class="form-label small fw-bold text-muted text-uppercase mb-1" style="font-size: 0.72rem;">Payment Date *</label>
+                                <input type="date" name="payment_date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
+                            </div>
+                            <div class="col-md-2 col-sm-6">
+                                <label class="form-label small fw-bold text-muted text-uppercase mb-1" style="font-size: 0.72rem;">Payment Mode *</label>
+                                <select name="payment_mode" class="form-select form-select-sm" required>
+                                    <option value="Bank Transfer">Bank Transfer (NEFT/RTGS)</option>
+                                    <option value="UPI">UPI / Digital QR</option>
+                                    <option value="Cheque">Cheque</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 col-sm-6">
+                                <label class="form-label small fw-bold text-muted text-uppercase mb-1" style="font-size: 0.72rem;">UTR / Cheque Ref</label>
+                                <input type="text" name="reference_no" id="modalRefNo" class="form-control form-control-sm font-monospace" placeholder="e.g. UTR-982138219">
+                            </div>
+                            <div class="col-md-2 col-sm-6">
+                                <label class="form-label small fw-bold text-success text-uppercase mb-1" style="font-size: 0.72rem;">Total Paid (₹) *</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-success-subtle text-success fw-bold border-success-subtle">₹</span>
+                                    <input type="number" step="0.01" name="amount" id="totalPaymentAmount" class="form-control form-control-sm fw-bold text-success border-success-subtle" required placeholder="0.00" oninput="validateAllocationSum()">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Invoices to allocate against -->
-                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                        <div>
-                            <h6 class="fw-bold text-dark mb-0">Allocate Payment to Supplier Bills</h6>
-                            <small class="text-muted">Check/uncheck bills or adjust allocation amounts</small>
+                    <div class="d-flex justify-content-between align-items-center mb-1.5">
+                        <div class="d-flex align-items-center gap-2">
+                            <h6 class="fw-bold text-dark mb-0 small text-uppercase" style="font-size: 0.78rem;">
+                                <i class="ti ti-list-check text-success me-1"></i>Allocate Payment to Supplier Bills
+                            </h6>
+                            <span class="text-muted" style="font-size: 0.72rem;">(Tick bills or adjust allocated amounts)</span>
                         </div>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 py-0.5" style="font-size: 0.78rem;" onclick="modalSelectAllInvoices(true)">
-                                <i class="ti ti-check-all me-1"></i> Select & Allocate All
+                        <div class="d-flex gap-1.5">
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2.5 py-0.5" style="font-size: 0.74rem;" onclick="modalSelectAllInvoices(true)">
+                                <i class="ti ti-check-all me-1"></i> Select &amp; Allocate All
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-2 py-0.5" style="font-size: 0.78rem;" onclick="modalSelectAllInvoices(false)">
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-0.5" style="font-size: 0.74rem;" onclick="modalSelectAllInvoices(false)">
                                 <i class="ti ti-x me-1"></i> Clear All
                             </button>
                         </div>
                     </div>
 
+                    <!-- Compact Scrollable Bills Container (Sticky Header & Footer) -->
                     <div id="unpaidInvoicesContainer">
-                        <div class="table-responsive mb-3">
-                            <table class="table table-bordered table-sm align-middle mb-0">
-                                <thead class="table-light small text-uppercase">
+                        <div class="table-responsive" style="max-height: 230px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <table class="table table-hover table-sm align-middle mb-0" style="font-size: 0.83rem;">
+                                <thead class="table-light small text-uppercase sticky-top" style="z-index: 3; top: 0; background-color: #f1f5f9; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
                                     <tr>
-                                        <th style="width: 36px;" class="text-center">
+                                        <th style="width: 38px;" class="text-center py-1.5">
                                             <input type="checkbox" id="modalSelectAllCb" class="form-check-input modal-inv-check" onchange="modalSelectAllInvoices(this.checked)" title="Select/Deselect All">
                                         </th>
-                                        <th>Internal Inv #</th>
-                                        <th>Vendor Bill #</th>
-                                        <th>Due Date</th>
-                                        <th class="text-end">Total (₹)</th>
-                                        <th class="text-end">Balance Due (₹)</th>
-                                        <th style="width: 25%;" class="text-end">Allocate Amount (₹)</th>
+                                        <th class="py-1.5">Internal Inv #</th>
+                                        <th class="py-1.5">Vendor Bill #</th>
+                                        <th class="py-1.5">Due Date</th>
+                                        <th class="text-end py-1.5">Total (₹)</th>
+                                        <th class="text-end py-1.5">Balance Due (₹)</th>
+                                        <th class="text-end py-1.5" style="width: 170px;">Allocate Amount (₹)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="unpaidInvoicesTbody">
@@ -1104,44 +1114,62 @@ include __DIR__ . '/../../includes/navbar.php';
                                             $isChecked = ($presetInvoiceId === 0 || $presetInvoiceId === (int)$uInv['invoice_id']);
                                         ?>
                                             <tr id="modal_inv_row_<?= $uInv['invoice_id'] ?>">
-                                                <td class="text-center">
+                                                <td class="text-center py-1">
                                                     <input type="checkbox" class="form-check-input modal-inv-check" data-invoice-id="<?= $uInv['invoice_id'] ?>" data-due="<?= (float)$uInv['outstanding_amount'] ?>" <?= $isChecked ? 'checked' : '' ?> onchange="onModalInvCheckboxChange(this, <?= $uInv['invoice_id'] ?>)">
                                                 </td>
-                                                <td class="font-monospace fw-semibold text-primary"><?= htmlspecialchars($uInv['invoice_number']) ?></td>
-                                                <td class="font-monospace text-dark"><?= htmlspecialchars($uInv['supplier_invoice_no'] ?: '—') ?></td>
-                                                <td class="small"><?= date('d-M-Y', strtotime($uInv['due_date'])) ?></td>
-                                                <td class="text-end">₹<?= number_format((float)$uInv['grand_total'], 2) ?></td>
-                                                <td class="text-end fw-bold text-danger max-due" data-due="<?= (float)$uInv['outstanding_amount'] ?>">
+                                                <td class="font-monospace fw-semibold text-primary py-1"><?= htmlspecialchars($uInv['invoice_number'] ?? '') ?></td>
+                                                <td class="font-monospace text-dark py-1"><?= htmlspecialchars($uInv['supplier_invoice_no'] ?: '—') ?></td>
+                                                <td class="small py-1"><?= !empty($uInv['due_date']) ? date('d-M-Y', strtotime($uInv['due_date'])) : '—' ?></td>
+                                                <td class="text-end py-1">₹<?= number_format((float)$uInv['grand_total'], 2) ?></td>
+                                                <td class="text-end fw-bold text-danger max-due py-1" data-due="<?= (float)$uInv['outstanding_amount'] ?>">
                                                     ₹<?= number_format((float)$uInv['outstanding_amount'], 2) ?>
                                                 </td>
-                                                <td>
+                                                <td class="text-end py-1">
                                                     <input type="hidden" name="alloc_invoice_id[]" value="<?= $uInv['invoice_id'] ?>">
-                                                    <input type="number" step="0.01" name="alloc_amount[]" id="modal_alloc_<?= $uInv['invoice_id'] ?>" class="form-control form-control-sm text-end alloc-input" max="<?= (float)$uInv['outstanding_amount'] ?>" min="0" value="<?= number_format($prefillAlloc, 2, '.', '') ?>" oninput="onAllocInputChange(this, <?= $uInv['invoice_id'] ?>)">
+                                                    <input type="number" step="0.01" name="alloc_amount[]" id="modal_alloc_<?= $uInv['invoice_id'] ?>" class="form-control form-control-sm text-end alloc-input font-monospace fw-bold text-success" max="<?= (float)$uInv['outstanding_amount'] ?>" min="0" value="<?= number_format($prefillAlloc, 2, '.', '') ?>" oninput="onAllocInputChange(this, <?= $uInv['invoice_id'] ?>)">
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
                                     <?php endif; ?>
                                 </tbody>
-                                <tfoot>
-                                    <tr class="bg-light">
-                                        <th colspan="6" class="text-end fw-bold">Total Allocated:</th>
-                                        <th class="text-end fs-6 text-success fw-bold" id="totalAllocatedDisplay">₹0.00</th>
-                                    </tr>
-                                </tfoot>
                             </table>
                         </div>
                     </div>
 
-                    <div class="mb-2">
-                        <label class="form-label small fw-semibold">Disbursement Remarks / Notes</label>
-                        <textarea name="notes" class="form-control" rows="2" placeholder="Payment approval note, remittance particulars..."></textarea>
+                    <!-- Inline Notes, Bank Name & Live Allocation Summary -->
+                    <div class="p-2 px-3 bg-light rounded-3 mt-2 border">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-md-4">
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white text-muted small"><i class="ti ti-building-bank"></i></span>
+                                    <input type="text" name="bank_name" class="form-control form-control-sm" placeholder="Drawee Bank Name (e.g. SBI)...">
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white text-muted small"><i class="ti ti-notes"></i></span>
+                                    <input type="text" name="notes" class="form-control form-control-sm" placeholder="Disbursement remarks / notes (optional)...">
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-end">
+                                <div class="d-inline-flex align-items-center justify-content-end gap-1.5 w-100">
+                                    <span class="small text-muted fw-semibold" style="font-size: 0.76rem;">Allocated:</span>
+                                    <span class="fs-6 fw-bold text-success font-monospace px-2 py-0.5 bg-white border border-success-subtle rounded-2" id="totalAllocatedDisplay">₹0.00</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="modal-footer border-0 px-4 pb-4">
-                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" id="savePaymentBtn" class="btn btn-success rounded-pill px-5">
-                        <i class="ti ti-check me-1"></i> Confirm & Post Payment
-                    </button>
+                <div class="modal-footer border-0 px-4 py-2.5 d-flex justify-content-between align-items-center bg-white">
+                    <div class="small text-muted d-none d-sm-block">
+                        <i class="ti ti-shield-check text-success me-1"></i>Auto-reconciles vendor balances against selected bills
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-light border rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" id="savePaymentBtn" class="btn btn-sm btn-success rounded-pill px-5 shadow-sm fw-semibold">
+                            <i class="ti ti-check me-1"></i> Confirm &amp; Post Payment
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -1159,7 +1187,7 @@ function updateModalSupplierDisplay(supplierId) {
     const select = document.getElementById('modalSupplierSelect');
     const nameText = document.getElementById('supplierDirectNameText');
     const codeText = document.getElementById('supplierDirectCodeText');
-    const label = document.getElementById('modalSupplierLabel');
+    const btnChange = document.getElementById('btnChangeSupplier');
 
     if (!card || !select) return;
 
@@ -1167,18 +1195,48 @@ function updateModalSupplierDisplay(supplierId) {
     if (sId && suppliersMap && suppliersMap[sId]) {
         const sup = suppliersMap[sId];
         if (nameText) nameText.textContent = sup.supplier_name;
-        if (codeText) codeText.textContent = sup.supplier_code;
+        if (codeText) codeText.textContent = sup.supplier_code || 'SUP';
         
         card.classList.remove('d-none');
         card.classList.add('d-flex');
+        card.style.display = 'flex';
         select.classList.add('d-none');
+        select.style.display = 'none';
         select.value = String(sId);
-        if (label) label.textContent = "Supplier Name";
+        if (btnChange) {
+            btnChange.classList.remove('d-none');
+            btnChange.style.display = 'inline-block';
+        }
     } else {
         card.classList.add('d-none');
         card.classList.remove('d-flex');
+        card.style.display = 'none';
         select.classList.remove('d-none');
-        if (label) label.textContent = "Select Supplier *";
+        select.style.display = 'block';
+        if (btnChange) {
+            btnChange.classList.add('d-none');
+            btnChange.style.display = 'none';
+        }
+    }
+}
+
+function enableSupplierSelectChange() {
+    const card = document.getElementById('supplierDirectCard');
+    const select = document.getElementById('modalSupplierSelect');
+    const btnChange = document.getElementById('btnChangeSupplier');
+    if (card) {
+        card.classList.add('d-none');
+        card.classList.remove('d-flex');
+        card.style.display = 'none';
+    }
+    if (select) {
+        select.classList.remove('d-none');
+        select.style.display = 'block';
+        select.focus();
+    }
+    if (btnChange) {
+        btnChange.classList.add('d-none');
+        btnChange.style.display = 'none';
     }
 }
 
@@ -1461,17 +1519,17 @@ function loadSupplierUnpaidInvoices(supplierId, preselectedMap = null, preselect
                 const tr = document.createElement('tr');
                 tr.id = `modal_inv_row_${invId}`;
                 tr.innerHTML = `
-                    <td class="text-center">
+                    <td class="text-center py-1">
                         <input type="checkbox" class="form-check-input modal-inv-check" data-invoice-id="${invId}" data-due="${due}" ${isChecked ? 'checked' : ''} onchange="onModalInvCheckboxChange(this, ${invId})">
                     </td>
-                    <td class="font-monospace fw-semibold text-primary">${inv.invoice_number}</td>
-                    <td class="font-monospace text-dark">${inv.supplier_invoice_no || '—'}</td>
-                    <td class="small">${inv.due_date}</td>
-                    <td class="text-end">₹${parseFloat(inv.grand_total).toFixed(2)}</td>
-                    <td class="text-end fw-bold text-danger max-due" data-due="${due}">₹${due.toFixed(2)}</td>
-                    <td>
+                    <td class="font-monospace fw-semibold text-primary py-1">${inv.invoice_number}</td>
+                    <td class="font-monospace text-dark py-1">${inv.supplier_invoice_no || '—'}</td>
+                    <td class="small py-1">${inv.due_date}</td>
+                    <td class="text-end py-1">₹${parseFloat(inv.grand_total).toFixed(2)}</td>
+                    <td class="text-end fw-bold text-danger max-due py-1" data-due="${due}">₹${due.toFixed(2)}</td>
+                    <td class="text-end py-1">
                         <input type="hidden" name="alloc_invoice_id[]" value="${invId}">
-                        <input type="number" step="0.01" name="alloc_amount[]" id="modal_alloc_${invId}" class="form-control form-control-sm text-end alloc-input" max="${due}" min="0" value="${allocVal}" oninput="onAllocInputChange(this, ${invId})">
+                        <input type="number" step="0.01" name="alloc_amount[]" id="modal_alloc_${invId}" class="form-control form-control-sm text-end alloc-input font-monospace fw-bold text-success" max="${due}" min="0" value="${allocVal}" oninput="onAllocInputChange(this, ${invId})">
                     </td>
                 `;
                 tbody.appendChild(tr);

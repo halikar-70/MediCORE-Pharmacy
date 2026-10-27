@@ -510,6 +510,7 @@ if (empty($categories)) {
 
 $currentUser = auth_user();
 
+$hide_navbar = true;
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
@@ -881,6 +882,9 @@ include __DIR__ . '/../../includes/navbar.php';
     <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
         <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-icon btn-light d-lg-none me-1 flex-shrink-0" id="sidebarToggleBtn" type="button" aria-label="Toggle Navigation Sidebar">
+                    <i class="ti ti-menu-2 fs-5"></i>
+                </button>
                 <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 44px; height: 44px; border-radius: 12px; background-color: <?= $editSale ? '#fef3c7' : '#ecfdf5' ?>; color: <?= $editSale ? '#b45309' : '#059669' ?>; border: 1px solid <?= $editSale ? '#fde68a' : '#a7f3d0' ?>;">
                     <i class="bi <?= $editSale ? 'bi-pencil-square' : 'bi-file-earmark-medical' ?> fs-4"></i>
                 </div>
@@ -934,7 +938,125 @@ include __DIR__ . '/../../includes/navbar.php';
                 <!-- Unified Progressive Dispensing Flow -->
                 <div class="unified-dispensing-container">
                     
-                    <!-- STEP 1: PATIENT SEARCH SECTION -->
+                    <!-- STEP 1: SELECTED PATIENT INFO BAR (Single-line Design with Balanced Gaps & Spacing) -->
+                    <style>
+                        #selectedPatientInfoCard::-webkit-scrollbar { display: none; }
+                        .patient-chip {
+                            background: #ffffff;
+                            border: 1px solid #e2e8f0;
+                            border-radius: 9999px;
+                            padding: 3px 10px;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            font-size: 0.76rem;
+                            white-space: nowrap;
+                            flex-shrink: 0;
+                            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+                            transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+                        }
+                        .patient-chip:hover {
+                            border-color: #cbd5e1;
+                            background-color: #f8fafc;
+                        }
+                        .patient-chip:focus-within {
+                            border-color: #059669 !important;
+                            background-color: #ffffff !important;
+                            box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.15) !important;
+                        }
+                        .patient-chip .chip-label {
+                            font-size: 0.64rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            letter-spacing: 0.4px;
+                            color: #64748b;
+                        }
+                        .patient-chip input {
+                            background: transparent;
+                            border: 0;
+                            outline: none;
+                            color: #1e293b;
+                            font-weight: 600;
+                            padding: 0 2px;
+                            font-size: 0.76rem;
+                        }
+                        .patient-chip input::placeholder {
+                            color: #94a3b8;
+                            font-weight: 400;
+                        }
+                    </style>
+                    <div id="selectedPatientInfoCard" class="px-3 py-2 rounded-3 border mb-3 shadow-2xs d-flex align-items-center justify-content-between flex-nowrap gap-2" style="background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%); border-color: #e2e8f0 !important; overflow-x: auto; scrollbar-width: none;">
+                        
+                        <!-- Left: Patient Avatar, Name & Status Badge -->
+                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-2xs bg-emerald flex-shrink-0" style="width: 30px; height: 30px; font-size: 0.88rem;" id="cardPatientAvatar">
+                                W
+                            </div>
+                            <span class="fw-bold text-dark fs-6 text-nowrap" id="cardPatientName" style="letter-spacing: -0.2px;">Walk-in Customer</span>
+                            <span class="badge bg-emerald text-white fw-bold px-2.5 py-1 rounded-pill text-nowrap" style="font-size: 0.66rem;" id="cardPatientBadge">
+                                <i class="ti ti-check me-1"></i>OPD Patient
+                            </span>
+                            <span id="cardPatientMeta" class="d-none">UHID: Direct / OPD | Mobile: -</span>
+                        </div>
+
+                        <!-- Subtle Vertical Separator -->
+                        <div class="vr mx-1 opacity-25 flex-shrink-0 d-none d-lg-block" style="height: 18px; width: 1px;"></div>
+
+                        <!-- Center: Single-line Information Chips with 2mm (8px) gaps -->
+                        <div class="d-flex align-items-center flex-nowrap flex-shrink-0" style="gap: 8px;">
+                            
+                            <!-- UHID Chip -->
+                            <div class="patient-chip" title="Patient UHID / ID">
+                                <i class="ti ti-id text-emerald" style="font-size: 0.85rem;"></i>
+                                <span class="chip-label">UHID:</span>
+                                <input type="text" id="displayPatientUhid" class="font-monospace fw-bold" style="width: 84px;" value="OPD-DIRECT" readonly>
+                            </div>
+
+                            <!-- Tariff / Category Chip -->
+                            <div class="patient-chip" title="Billing Tariff Category">
+                                <i class="ti ti-tag text-primary" style="font-size: 0.82rem;"></i>
+                                <span class="chip-label">Type:</span>
+                                <span class="fw-bold text-dark" id="cardPatientCategory" style="font-size: 0.74rem;">OPD Walk-in</span>
+                            </div>
+
+                            <!-- Date Chip -->
+                            <div class="patient-chip" title="Current Billing Date">
+                                <i class="ti ti-calendar text-muted" style="font-size: 0.82rem;"></i>
+                                <span class="chip-label">Date:</span>
+                                <span class="fw-bold font-monospace text-dark" style="font-size: 0.74rem;"><?= date('d-M-Y') ?></span>
+                            </div>
+
+                            <!-- Mobile / Contact Chip -->
+                            <div class="patient-chip" title="Contact Mobile Number (Editable)">
+                                <i class="ti ti-phone text-muted" style="font-size: 0.82rem;"></i>
+                                <span class="chip-label">Phone:</span>
+                                <input type="text" id="displayPatientMobile" style="width: 88px;" placeholder="Mobile No." oninput="document.getElementById('hiddenCustomerMobile').value = this.value;">
+                            </div>
+
+                            <!-- Doctor / Prescriber Chip -->
+                            <div class="patient-chip" title="Attending Doctor / Prescriber (Editable)">
+                                <i class="ti ti-stethoscope text-emerald" style="font-size: 0.85rem;"></i>
+                                <span class="chip-label">Doctor:</span>
+                                <input type="text" id="displayDoctorName" style="width: 105px;" placeholder="Attending Doctor" list="doctorDatalist" oninput="document.getElementById('hiddenDoctorName').value = this.value; document.getElementById('modalDoctorInput').value = this.value;">
+                                <datalist id="doctorDatalist">
+                                    <?php foreach ($availableDoctors as $dName): ?>
+                                        <option value="<?= htmlspecialchars($dName) ?>">
+                                    <?php endforeach; ?>
+                                </datalist>
+                            </div>
+
+                        </div>
+
+                        <!-- Right: Change Patient Action Button -->
+                        <div class="d-flex align-items-center flex-shrink-0 ms-auto">
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-3 rounded-pill fw-semibold d-inline-flex align-items-center gap-1.5 shadow-2xs text-nowrap" onclick="clearSelectedPatient()" style="font-size: 0.76rem;" title="Switch or reset patient">
+                                <i class="ti ti-arrows-exchange"></i>
+                                <span>Change</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- STEP 2: PATIENT SEARCH SECTION -->
                     <div id="patientSearchSection" class="p-3 bg-light rounded-3 border mb-3" style="background-color: #fbfcfd !important;">
                         <div class="d-flex justify-content-between align-items-center mb-1.5">
                             <label class="form-label small fw-semibold text-muted mb-0">
@@ -979,59 +1101,6 @@ include __DIR__ . '/../../includes/navbar.php';
                         </div>
                     </div>
 
-                    <!-- STEP 2: SELECTED PATIENT INFO CARD -->
-                    <div id="selectedPatientInfoCard" class="p-3 rounded-2 border mb-3 shadow-xs bg-white" style="border-color: #e2e8f0 !important;">
-                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pb-2 mb-2 border-bottom border-light-subtle">
-                            <div class="d-flex align-items-center gap-2.5">
-                                <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold shadow-xs bg-emerald" style="width: 38px; height: 38px; font-size: 1rem;" id="cardPatientAvatar">
-                                    W
-                                </div>
-                                <div>
-                                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                                        <h6 class="fw-bold text-dark mb-0 fs-6" id="cardPatientName">Walk-in Customer</h6>
-                                        <span class="badge bg-emerald text-white fw-bold px-2 py-0.5" style="font-size: 0.70rem;" id="cardPatientBadge"><i class="ti ti-check me-1"></i>Selected OPD Patient</span>
-                                    </div>
-                                    <div class="text-muted small mt-0.5" style="font-size: 0.74rem;" id="cardPatientMeta">UHID: Direct / OPD | Mobile: -</div>
-                                </div>
-                            </div>
-                            <div class="d-flex align-items-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-3 rounded-pill fw-semibold d-inline-flex align-items-center gap-1 shadow-xs" onclick="clearSelectedPatient()" style="font-size: 0.78rem;">
-                                    <i class="ti ti-arrows-exchange"></i> Change Patient
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Patient Details Row -->
-                        <div class="row g-2 pt-1 align-items-center">
-                            <div class="col-md-3 col-sm-6">
-                                <div class="p-2 bg-white rounded-2 border border-light-subtle">
-                                    <div class="text-muted small fw-semibold" style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px;">Patient ID / UHID</div>
-                                    <input type="text" id="displayPatientUhid" class="form-control-plaintext fw-bold text-dark p-0 font-monospace" style="font-size: 0.88rem;" value="OPD-DIRECT" readonly>
-                                </div>
-                            </div>
-                            <div class="col-md-4 col-sm-6">
-                                <div class="p-2 bg-white rounded-2 border border-light-subtle">
-                                    <div class="text-muted small fw-semibold" style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px;">Mobile / Contact</div>
-                                    <input type="text" id="displayPatientMobile" class="form-control form-control-sm border-0 bg-transparent p-0 fw-semibold text-dark" placeholder="Mobile number" oninput="document.getElementById('hiddenCustomerMobile').value = this.value;">
-                                </div>
-                            </div>
-                            <div class="col-md-5 col-sm-12">
-                                <div class="p-2 bg-white rounded-2 border border-light-subtle">
-                                    <div class="d-flex justify-content-between align-items-center mb-0.5">
-                                        <div class="text-muted small fw-semibold" style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px;">Doctor / Prescriber</div>
-                                        <span class="text-muted" style="font-size: 0.65rem;"><i class="ti ti-edit"></i> Editable</span>
-                                    </div>
-                                    <input type="text" id="displayDoctorName" class="form-control form-control-sm border-0 bg-transparent p-0 fw-semibold text-dark" placeholder="Attending Doctor (Optional)" list="doctorDatalist" oninput="document.getElementById('hiddenDoctorName').value = this.value; document.getElementById('modalDoctorInput').value = this.value;">
-                                    <datalist id="doctorDatalist">
-                                        <?php foreach ($availableDoctors as $dName): ?>
-                                            <option value="<?= htmlspecialchars($dName) ?>">
-                                        <?php endforeach; ?>
-                                    </datalist>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Prescription Handshake Alert Banner (Auto-detected from Doctor Consultation) -->
                     <div id="patientPrescriptionBanner" class="p-3 rounded-2 border mb-3 shadow-xs bg-white d-none" style="border-left: 5px solid #059669 !important; background-color: #f0fdf4 !important;">
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
@@ -1067,99 +1136,103 @@ include __DIR__ . '/../../includes/navbar.php';
                         <?php endforeach; ?>
                     </select>
 
-                    <!-- STEP 3: SEARCH & ADD MEDICINE (Identical to IPD) -->
-                    <div class="p-3 bg-light rounded-3 border mb-3" style="background-color: #fbfcfd !important;">
-                        <div class="d-flex justify-content-between align-items-center mb-1.5">
-                            <label class="form-label small fw-semibold text-muted mb-0">
-                                <i class="ti ti-pill text-emerald me-1"></i> Search &amp; Add Medicine / Charge <span class="text-danger">*</span>
-                            </label>
-                            <span class="text-muted small" style="font-size: 0.72rem;">
-                                <i class="ti ti-bolt text-warning me-0.5"></i> Select any medicine to automatically add it to charges
-                            </span>
-                        </div>
-                        
-                        <div class="position-relative">
-                            <div class="input-group">
-                                <span class="input-group-text bg-white text-muted border-end-0">
-                                    <i class="ti ti-search text-emerald"></i>
-                                </span>
-                                <input type="text" 
-                                       id="chargeMedicineInput" 
-                                       class="form-control form-control-lg fs-6 bg-white border-start-0 ps-1" 
-                                       placeholder="Type medicine name to search &amp; auto-add to charges..." 
-                                       autocomplete="off" 
-                                       oninput="onMedicineSearchInput(this.value)" 
-                                       onfocus="onMedicineSearchFocus()" 
-                                       onkeydown="onMedicineInputKeydown(event)">
-                                <button type="button" class="btn btn-outline-secondary border-start-0 border-light-subtle" onclick="clearMedicineSearch()" title="Clear">
-                                    <i class="ti ti-x"></i>
-                                </button>
-                            </div>
-
-                            <!-- Live Autocomplete Suggestions List -->
-                            <div id="medicineSuggestionsList" 
-                                 class="medicine-suggestions-menu position-absolute d-none" 
-                                 style="background: #ffffff !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; box-shadow: 0 20px 45px -8px rgba(15, 23, 42, 0.28), 0 8px 18px -4px rgba(15, 23, 42, 0.12) !important; border-radius: 12px !important; width: 100%; min-width: 100%; left: 0; z-index: 1090; max-height: 380px; overflow-y: auto;">
-                            </div>
-                        </div>
-
-                        <!-- Toast alert for auto-added feedback -->
-                        <div id="autoAddNotification" class="d-none mt-2 py-1.5 px-3 rounded-2 small fw-semibold d-flex align-items-center justify-content-between" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; transition: opacity 0.3s ease;">
-                            <span id="autoAddNotificationText"><i class="ti ti-check me-1"></i> Medicine added to charges</span>
-                            <span class="badge bg-emerald text-white">Added &check;</span>
-                        </div>
-
-                        <!-- Hidden compatibility inputs -->
-                        <input type="hidden" id="selectedMedicineId" value="">
-                        <input type="hidden" id="selectedBatchId" value="">
-                        <input type="hidden" id="chargeCategorySelect" value="">
-                        <input type="hidden" id="chargeExpiryInput" value="">
-                        <input type="hidden" id="chargeMfgRateInput" value="0.00">
-                        <input type="hidden" id="chargeRateInput" value="0.00">
-                        <input type="hidden" id="chargeQtyInput" value="1">
-                        <input type="hidden" id="chargeUnitInput" value="unit">
-                        <input type="hidden" id="chargeTotalDisplay" value="0.00">
-                        <select id="chargeBatchSelect" class="d-none"><option value="">Select Batch</option></select>
-                        <span id="batchCountBadge" class="d-none"></span>
-                    </div>
-
-                    <!-- STEP 4: CHARGE DETAILS (Live Charges Table & Grand Total) -->
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
+                    <!-- STEP 3: UNIFIED CHARGE DETAILS & MEDICINE DISPENSING CARD -->
+                    <div class="card border rounded-3 shadow-xs mb-3 pos-cart-card" style="border-color: #e2e8f0 !important; overflow: visible;">
+                        <!-- Card Header -->
+                        <div class="card-header bg-white py-2.5 px-3.5 d-flex justify-content-between align-items-center border-bottom" style="border-color: #e2e8f0 !important;">
                             <div class="d-flex align-items-center gap-2">
-                                <i class="ti ti-receipt text-muted fs-5"></i>
+                                <i class="ti ti-receipt text-emerald fs-5"></i>
                                 <span class="fw-bold text-dark small text-uppercase" style="letter-spacing: 0.5px; font-size: 0.82rem;">Charge Details</span>
                             </div>
                             <span class="badge rounded-pill px-3 py-1.5 fw-semibold font-monospace" style="background-color: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; font-size: 0.82rem;" id="chargeDetailsTotalBadge">
                                 Total: ₹0.00
                             </span>
                         </div>
-                        <div class="card border rounded-3 shadow-xs" style="overflow: visible !important;">
-                            <div class="table-responsive" style="overflow: visible !important;">
-                                <table class="table table-hover align-middle mb-0" id="cartTable">
-                                    <thead class="table-light small text-muted text-uppercase" style="font-size: 0.74rem;">
-                                        <tr>
-                                            <th style="width: 4%;">S.NO</th>
-                                            <th style="width: 25%;">CHARGE / MEDICINE NAME</th>
-                                            <th style="width: 20%;">CONTAINS / COMPOSITION</th>
-                                            <th style="width: 13%;">EXPIRY DATE</th>
-                                            <th class="text-end" style="width: 9%;">MFG RATE</th>
-                                            <th class="text-end" style="width: 9%;">BILL RATE</th>
-                                            <th class="text-center" style="width: 8%;">QTY</th>
-                                            <th class="text-end" style="width: 9%;">TOTAL</th>
-                                            <th class="text-center" style="width: 3%;"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cartTableBody">
-                                        <tr id="emptyCartRow">
-                                            <td colspan="9" class="text-center py-4 text-muted small">
-                                                No charges added yet. Search a medicine above to automatically add to this bill.
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+
+                        <!-- Table Area -->
+                        <div class="table-responsive pos-cart-table-wrap">
+                            <table class="table table-hover align-middle mb-0" id="cartTable">
+                                <thead class="table-light small text-muted text-uppercase" style="font-size: 0.74rem;">
+                                    <tr>
+                                        <th class="text-center" style="width: 3.5%;">S.NO</th>
+                                        <th style="width: 20%;">CHARGE / MEDICINE NAME</th>
+                                        <th style="width: 9.5%;">BATCH</th>
+                                        <th style="width: 15%;">CONTAINS / COMPOSITION</th>
+                                        <th style="width: 11%;">EXPIRY DATE</th>
+                                        <th class="text-center" style="width: 10%;">STOCK (LEFT)</th>
+                                        <th class="text-end" style="width: 8%;">MFG RATE</th>
+                                        <th class="text-end" style="width: 8%;">BILL RATE</th>
+                                        <th class="text-center" style="width: 6%;">QTY</th>
+                                        <th class="text-end" style="width: 7%;">TOTAL</th>
+                                        <th class="text-center" style="width: 2%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cartTableBody">
+                                    <tr id="emptyCartRow">
+                                        <td colspan="11" class="text-center py-4 text-muted small">
+                                            No charges added yet. Search a medicine below to automatically add to this bill.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
+
+                        <!-- Integrated Search & Add Medicine Footer Section -->
+                        <div class="p-3 border-top position-relative" style="background-color: #fbfcfd !important; border-color: #e2e8f0 !important; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                            <div class="d-flex justify-content-between align-items-center mb-1.5">
+                                <label class="form-label small fw-semibold text-muted mb-0">
+                                    <i class="ti ti-pill text-emerald me-1"></i> Search &amp; Add Medicine / Charge <span class="text-danger">*</span>
+                                </label>
+                                <span class="text-muted small" style="font-size: 0.72rem;">
+                                    <i class="ti ti-bolt text-warning me-0.5"></i> Select any medicine to automatically add it to charges
+                                </span>
+                            </div>
+                            
+                            <div class="position-relative">
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-muted border-end-0">
+                                        <i class="ti ti-search text-emerald"></i>
+                                    </span>
+                                    <input type="text" 
+                                           id="chargeMedicineInput" 
+                                           class="form-control form-control-lg fs-6 bg-white border-start-0 ps-1" 
+                                           placeholder="Type medicine name to search &amp; auto-add to charges..." 
+                                           autocomplete="off" 
+                                           oninput="onMedicineSearchInput(this.value)" 
+                                           onfocus="onMedicineSearchFocus()" 
+                                           onkeydown="onMedicineInputKeydown(event)">
+                                    <button type="button" class="btn btn-outline-secondary border-start-0 border-light-subtle" onclick="clearMedicineSearch()" title="Clear">
+                                        <i class="ti ti-x"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Live Autocomplete Suggestions List -->
+                                <div id="medicineSuggestionsList" 
+                                     class="medicine-suggestions-menu position-absolute d-none" 
+                                     style="background: #ffffff !important; background-color: #ffffff !important; border: 1px solid #cbd5e1 !important; box-shadow: 0 20px 45px -8px rgba(15, 23, 42, 0.28), 0 8px 18px -4px rgba(15, 23, 42, 0.12) !important; border-radius: 12px !important; width: 100%; min-width: 100%; left: 0; z-index: 1090; max-height: 380px; overflow-y: auto;">
+                                </div>
+                            </div>
+
+                            <!-- Toast alert for auto-added feedback -->
+                            <div id="autoAddNotification" class="d-none mt-2 py-1.5 px-3 rounded-2 small fw-semibold d-flex align-items-center justify-content-between" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; transition: opacity 0.3s ease;">
+                                <span id="autoAddNotificationText"><i class="ti ti-check me-1"></i> Medicine added to charges</span>
+                                <span class="badge bg-emerald text-white">Added &check;</span>
+                            </div>
+
+                            <!-- Hidden compatibility inputs -->
+                            <input type="hidden" id="selectedMedicineId" value="">
+                            <input type="hidden" id="selectedBatchId" value="">
+                            <input type="hidden" id="chargeCategorySelect" value="">
+                            <input type="hidden" id="chargeExpiryInput" value="">
+                            <input type="hidden" id="chargeMfgRateInput" value="0.00">
+                            <input type="hidden" id="chargeRateInput" value="0.00">
+                            <input type="hidden" id="chargeQtyInput" value="1">
+                            <input type="hidden" id="chargeUnitInput" value="unit">
+                            <input type="hidden" id="chargeTotalDisplay" value="0.00">
+                            <select id="chargeBatchSelect" class="d-none"><option value="">Select Batch</option></select>
+                            <span id="batchCountBadge" class="d-none"></span>
+                        </div>
+                    </div>
 
                         <!-- Grand Total Display -->
                         <div class="d-flex justify-content-end align-items-center py-3">
@@ -1177,108 +1250,10 @@ include __DIR__ . '/../../includes/navbar.php';
                             </button>
                         </div>
                     </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Recent OPD Bills Section -->
-    <div class="card border shadow-sm rounded-4 mb-4 bg-white" style="border: 1px solid #e2e8f0 !important; border-radius: 14px !important;">
-        <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-2.5">
-                <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 38px; height: 38px; border-radius: 10px; background-color: #f0fdf4; color: #059669; border: 1px solid #a7f3d0;">
-                    <i class="ti ti-history fs-5"></i>
-                </div>
-                <div>
-                    <h5 class="fw-bold mb-0 text-dark" style="font-size: 1.05rem;">Recent OPD Bills</h5>
-                    <div class="text-muted small" style="font-size: 0.76rem;">View, reprint, or inspect recently generated counter sale invoices</div>
-                </div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <a href="<?= BASE_URL ?>modules/sales/monitoring.php?sale_type=COUNTER_SALE" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs" style="font-size: 0.80rem;">
-                    <i class="ti ti-external-link"></i> Full Sales Registry
-                </a>
-            </div>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0" style="font-size: 0.86rem;">
-                    <thead class="table-light text-muted text-uppercase" style="font-size: 0.72rem; letter-spacing: 0.04em;">
-                        <tr>
-                            <th class="py-2.5 px-3">Invoice #</th>
-                            <th class="py-2.5 px-3">Date &amp; Time</th>
-                            <th class="py-2.5 px-3">Patient / Customer</th>
-                            <th class="py-2.5 px-3">Doctor</th>
-                            <th class="py-2.5 px-2 text-center">Items</th>
-                            <th class="py-2.5 px-3 text-end">Grand Total</th>
-                            <th class="py-2.5 px-3 text-center">Payment Status</th>
-                            <th class="py-2.5 px-3 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        <?php if (empty($recentOpdBills)): ?>
-                            <tr>
-                                <td colspan="8" class="text-center py-4 text-muted">
-                                    <i class="ti ti-file-invoice text-secondary fs-3 d-block mb-1"></i>
-                                    No counter sale bills generated yet today.
-                                </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($recentOpdBills as $b): ?>
-                                <tr>
-                                    <td class="py-2.5 px-3 font-monospace fw-bold">
-                                        <a href="invoice.php?id=<?= $b['sale_id'] ?>" target="_blank" class="text-decoration-none text-primary">
-                                            <?= htmlspecialchars($b['sale_number']) ?>
-                                        </a>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-muted small font-monospace">
-                                        <?= date('d M Y, h:i A', strtotime($b['created_at'])) ?>
-                                    </td>
-                                    <td class="py-2.5 px-3">
-                                        <div class="fw-bold text-dark"><?= htmlspecialchars($b['customer_name']) ?></div>
-                                        <?php if (!empty($b['customer_mobile'])): ?>
-                                            <div class="text-muted small" style="font-size: 0.74rem;"><i class="ti ti-phone me-1"></i><?= htmlspecialchars($b['customer_mobile']) ?></div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-muted small">
-                                        <?= htmlspecialchars($b['doctor_name'] ?: '—') ?>
-                                    </td>
-                                    <td class="py-2.5 px-2 text-center">
-                                        <span class="badge bg-light text-dark border"><?= (int)$b['items_count'] ?> items</span>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-end font-monospace fw-bold text-success" style="font-size: 0.92rem;">
-                                        ₹<?= number_format((float)$b['grand_total'], 2) ?>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-center">
-                                        <?php if ($b['payment_status'] === 'PAID'): ?>
-                                            <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2 py-1" style="font-size: 0.72rem;">PAID</span>
-                                        <?php elseif ($b['payment_status'] === 'PARTIALLY_PAID'): ?>
-                                            <span class="badge rounded-pill bg-warning-subtle text-warning border border-warning-subtle px-2 py-1" style="font-size: 0.72rem;">PARTIAL</span>
-                                        <?php elseif ($b['payment_status'] === 'CANCELLED'): ?>
-                                            <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" style="font-size: 0.72rem;">CANCELLED</span>
-                                        <?php else: ?>
-                                            <span class="badge rounded-pill bg-secondary-subtle text-secondary border px-2 py-1" style="font-size: 0.72rem;">UNPAID</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-center">
-                                        <div class="btn-group btn-group-sm">
-                                            <a href="invoice.php?id=<?= $b['sale_id'] ?>&autoprint=1" target="_blank" class="btn btn-sm btn-outline-primary px-2 py-1" title="Print Invoice">
-                                                <i class="ti ti-printer"></i>
-                                            </a>
-                                            <a href="invoice.php?id=<?= $b['sale_id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary px-2 py-1" title="View Bill">
-                                                <i class="ti ti-eye"></i>
-                                            </a>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+                </form>
             </div>
         </div>
     </div>
-</div>
 
 <!-- Modal: Billing Preview & Payment -->
 <div class="modal fade" id="billingPreviewModal" tabindex="-1" aria-hidden="true">
@@ -1923,11 +1898,14 @@ function selectCounterPatientById(patientId) {
     const badgeEl = document.getElementById('cardPatientBadge');
     if (badgeEl) {
         badgeEl.className = 'badge bg-primary text-white fw-bold px-2 py-0.5';
-        badgeEl.innerHTML = '<i class="ti ti-hospital me-1"></i>Existing Patient &bull; Pass to MediPro';
+        badgeEl.innerHTML = '<i class="ti ti-hospital me-1"></i>Existing Patient';
     }
 
     const metaEl = document.getElementById('cardPatientMeta');
     if (metaEl) metaEl.textContent = `UHID: ${p.hospital_uhid || p.pharmacy_patient_no || 'OPD'} | Phone: ${p.mobile || '-'}`;
+
+    const catEl = document.getElementById('cardPatientCategory');
+    if (catEl) catEl.textContent = p.patient_type || (p.hospital_uhid ? 'Registered OPD' : 'OPD Patient');
 
     const uhidInp = document.getElementById('displayPatientUhid');
     if (uhidInp) uhidInp.value = p.hospital_uhid || p.pharmacy_patient_no || 'OPD-DIRECT';
@@ -1990,11 +1968,14 @@ function resetToWalkInCustomer() {
     const badgeEl = document.getElementById('cardPatientBadge');
     if (badgeEl) {
         badgeEl.className = 'badge bg-emerald text-white fw-bold px-2 py-0.5';
-        badgeEl.innerHTML = '<i class="ti ti-check me-1"></i>Walk-in Customer &bull; Modal Payment';
+        badgeEl.innerHTML = '<i class="ti ti-check me-1"></i>OPD Patient';
     }
 
     const metaEl = document.getElementById('cardPatientMeta');
     if (metaEl) metaEl.textContent = 'UHID: Direct / OPD | Mobile: -';
+
+    const catEl = document.getElementById('cardPatientCategory');
+    if (catEl) catEl.textContent = 'OPD Walk-in';
 
     const uhidInp = document.getElementById('displayPatientUhid');
     if (uhidInp) uhidInp.value = 'OPD-DIRECT';
@@ -2496,22 +2477,27 @@ function onMedicineInputKeydown(e) {
         }
     }
 
-    // ArrowDown redirects directly into the quantity input of the selected medicine
-    if (e.key === 'ArrowDown') {
-        if (cart.length > 0) {
-            e.preventDefault();
-            focusCartQty(0);
-            return;
-        }
-    }
-
-    // ArrowUp redirects back up to the Patient search input
+    // ArrowUp redirects back up into cart table (or patient search if cart is empty)
     if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const pInput = document.getElementById('counterPatientSearchInput');
-        if (pInput) {
-            pInput.focus();
-            pInput.select();
+        if (cart.length > 0) {
+            focusCartQty(cart.length - 1);
+        } else {
+            const pInput = document.getElementById('counterPatientSearchInput');
+            if (pInput) {
+                pInput.focus();
+                pInput.select();
+            }
+        }
+        return;
+    }
+
+    // ArrowDown redirects to proceed button
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const proceedBtn = document.getElementById('btnProceedPreview');
+        if (proceedBtn) {
+            proceedBtn.focus();
         }
         return;
     }
@@ -2662,15 +2648,24 @@ function selectMedicineSuggestion(medicineId) {
     const gstPercent = parseFloat(med.gst_percent || 0);
 
     // Auto add to cart
-    const existingIdx = cart.findIndex(c => c.medicine_id === med.medicine_id && c.batch_number === batchNumber);
-    if (existingIdx !== -1) {
-        const newQty = cart[existingIdx].quantity + 1;
-        if (maxStock > 0 && newQty > maxStock) {
-            showAutoAddNotice(`Cannot add more. Max stock for batch ${batchNumber} is ${maxStock}.`, 'warning');
-            return;
+    // Check if this medicine is already present in the cart (as a single row or split across batches)
+    const existingRows = cart.filter(c => c.medicine_id === med.medicine_id);
+    if (existingRows.length > 0) {
+        // Find the primary/earliest row index for this medicine
+        const primaryIdx = cart.findIndex(c => c.medicine_id === med.medicine_id);
+        const totalCurrentQty = existingRows.reduce((sum, r) => sum + (parseInt(r.quantity) || 0), 0);
+        const newTotalQty = totalCurrentQty + 1;
+
+        // Allocate the new total quantity across batches in FEFO order
+        handleMultiBatchAllocation(primaryIdx, newTotalQty);
+        clearMedicineSearch();
+
+        // Focus the last allocated row for this medicine
+        const lastRowIdx = cart.map((c, i) => c.medicine_id === med.medicine_id ? i : -1).filter(i => i !== -1).pop();
+        if (lastRowIdx !== undefined && lastRowIdx !== -1) {
+            setTimeout(() => focusCartQty(lastRowIdx), 60);
         }
-        cart[existingIdx].quantity = newQty;
-        showAutoAddNotice(`Increased "${med.medicine_name}" quantity to ${newQty}`, 'success');
+        return;
     } else {
         if (maxStock <= 0) {
             showAutoAddNotice(`Warning: "${med.medicine_name}" is out of stock (Stock: 0).`, 'warning');
@@ -2696,7 +2691,7 @@ function selectMedicineSuggestion(medicineId) {
         });
     }
 
-    const targetIdx = existingIdx !== -1 ? existingIdx : cart.length - 1;
+    const targetIdx = cart.length - 1;
 
     // Immediately render updated cart
     renderCart();
@@ -2747,8 +2742,8 @@ function renderCart() {
     if (cart.length === 0) {
         tbody.innerHTML = `
             <tr id="emptyCartRow">
-                <td colspan="9" class="text-center py-4 text-muted small">
-                    No charges added yet. Search a medicine above to automatically add to this bill.
+                <td colspan="11" class="text-center py-4 text-muted small">
+                    No charges added yet. Search a medicine below to automatically add to this bill.
                 </td>
             </tr>
         `;
@@ -2768,6 +2763,7 @@ function renderCart() {
         const med = catalogMedicines.find(m => m.medicine_id === item.medicine_id);
         const batches = (med && Array.isArray(med.batches)) ? med.batches : [];
         const expStatus = getExpiryStatus(item.expiry_date);
+        let batchCellHtml = '';
         let expiryCellHtml = '';
 
         if (batches.length > 1) {
@@ -2801,19 +2797,18 @@ function renderCart() {
                 `;
             });
 
-            expiryCellHtml = `
+            batchCellHtml = `
                 <div class="dropdown d-inline-block position-relative batch-dropdown-container">
                     <button type="button" 
-                            class="btn btn-sm py-1 px-2 font-monospace d-inline-flex align-items-center gap-1.5 border shadow-2xs expiry-picker-btn"
-                            style="background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border-color: ${expStatus.badgeBorder} !important; font-size: 0.76rem; border-radius: 6px; font-weight: 600;"
+                            class="btn btn-sm py-1 px-2 font-monospace d-inline-flex align-items-center gap-1 border shadow-2xs expiry-picker-btn"
+                            style="background-color: #eef2ff; color: #4338ca; border-color: #c7d2fe !important; font-size: 0.76rem; border-radius: 6px; font-weight: 600;"
                             onclick="toggleBatchExpiryMenu(event, ${idx})"
                             title="Click to switch batch (${batches.length} available)">
-                        <i class="bi ${expStatus.icon}"></i>
-                        <span>${escapeHtml(item.expiry_date || 'N/A')}</span>
-                        <span class="small opacity-75">(${expStatus.label})</span>
-                        <span class="badge bg-white text-dark border ms-1 px-1.5 py-0.5" style="font-size: 0.68rem; font-weight: 700;">${batches.length} batches ▾</span>
+                        <i class="ti ti-package"></i>
+                        <span>${escapeHtml(item.batch_number || 'GEN-01')}</span>
+                        <span class="badge bg-white text-dark border ms-0.5 px-1 py-0.2" style="font-size: 0.64rem;">${batches.length}▾</span>
                     </button>
-                    <div id="batchExpiryMenu_${idx}" class="batch-expiry-menu shadow-lg p-0 border d-none" style="min-width: 320px;">
+                    <div id="batchExpiryMenu_${idx}" class="batch-expiry-menu shadow-lg p-0 border d-none" style="min-width: 320px; z-index: 1060;">
                         <div class="px-3 py-2 border-bottom bg-light d-flex justify-content-between align-items-center rounded-top-2" style="font-size: 0.74rem;">
                             <span class="fw-bold text-dark"><i class="ti ti-layers me-1 text-emerald"></i>Select Batch / Expiry</span>
                             <span class="badge bg-emerald-subtle text-emerald border" style="font-size: 0.68rem;">FEFO Earliest First</span>
@@ -2825,39 +2820,90 @@ function renderCart() {
                 </div>
             `;
         } else {
-            expiryCellHtml = `
-                <span class="badge font-monospace px-2 py-1 ${expStatus.cls}" style="font-size: 0.76rem; background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border: 1px solid ${expStatus.badgeBorder} !important;" title="${expStatus.tag}: ${expStatus.label}">
-                    <i class="bi ${expStatus.icon} me-1"></i>${escapeHtml(item.expiry_date || 'N/A')}
-                    <span class="ms-1 small opacity-75">(${expStatus.label})</span>
+            batchCellHtml = `
+                <span class="badge font-monospace px-2 py-1 shadow-2xs" style="background-color: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; font-size: 0.76rem;">
+                    <i class="ti ti-package me-1"></i>${escapeHtml(item.batch_number || 'GEN-01')}
                 </span>
             `;
         }
 
+        expiryCellHtml = `
+            <span class="badge font-monospace px-2 py-1 ${expStatus.cls}" style="font-size: 0.76rem; background-color: ${expStatus.badgeBg} !important; color: ${expStatus.badgeColor} !important; border: 1px solid ${expStatus.badgeBorder} !important;" title="${expStatus.tag}: ${expStatus.label}">
+                <i class="bi ${expStatus.icon} me-1"></i>${escapeHtml(item.expiry_date || 'N/A')}
+            </span>
+        `;
+
+        const batchStock = parseInt(item.max_stock) || 0;
+        const allocatedQty = parseInt(item.quantity) || 0;
+        const remainingStock = Math.max(0, batchStock - allocatedQty);
+
+        let stockCellHtml = '';
+        if (remainingStock === 0) {
+            stockCellHtml = `
+                <div class="d-inline-flex flex-column align-items-center justify-content-center item-stock-display" title="Batch ${escapeHtml(item.batch_number)}: Finished (${batchStock} of ${batchStock} allocated)">
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap" style="background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; font-size: 0.72rem; font-weight: 700;">
+                        <i class="ti ti-check me-0.5"></i>0 left &bull; Finished
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">all ${batchStock} allocated</span>
+                </div>
+            `;
+        } else if (remainingStock <= 5) {
+            stockCellHtml = `
+                <div class="d-inline-flex flex-column align-items-center justify-content-center item-stock-display" title="Batch ${escapeHtml(item.batch_number)}: Low Stock (${remainingStock} units left of ${batchStock})">
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 0.74rem; font-weight: 700;">
+                        <i class="ti ti-alert-triangle me-0.5 text-warning"></i>${remainingStock} left
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">of ${batchStock} avail</span>
+                </div>
+            `;
+        } else {
+            stockCellHtml = `
+                <div class="d-inline-flex flex-column align-items-center justify-content-center item-stock-display" title="Batch ${escapeHtml(item.batch_number)}: ${remainingStock} units left of ${batchStock}">
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap bg-emerald-subtle text-emerald border border-emerald-subtle" style="font-size: 0.74rem; font-weight: 700;">
+                        ${remainingStock} left
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">of ${batchStock} avail</span>
+                </div>
+            `;
+        }
+
         const containsRemark = item.composition || item.generic_name || '';
+
+        const totalMedStock = (med && Array.isArray(med.batches) && med.batches.length > 0)
+            ? med.batches.reduce((sum, b) => sum + (parseInt(b.stock) || 0), 0)
+            : (item.max_stock || 999);
 
         html += `
             <tr class="align-middle cart-row" tabindex="0" data-cart-index="${idx}" onkeydown="onCartRowKeydown(event, ${idx})">
                 <td class="text-muted fw-semibold small text-center">${idx + 1}</td>
                 <td>
                     <div class="fw-bold text-dark" style="font-size: 0.88rem;">${escapeHtml(item.medicine_name)}</div>
-                    <div class="text-muted small" style="font-size: 0.71rem; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
-                        <span class="badge font-monospace" style="background:#e0e7ff; color:#3730a3; font-size:0.68rem; padding: 1px 5px;"><i class="ti ti-package me-1"></i>Batch: ${escapeHtml(item.batch_number || 'GEN-01')}</span>
-                        ${item.manufacturer ? '<span class="text-primary fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}Cat: ${escapeHtml(item.category)} &bull; ${escapeHtml(item.unit)} &bull; Stock: ${item.max_stock}
+                    <div class="text-muted small" style="font-size: 0.70rem; margin-top: 2px;">
+                        Cat: ${escapeHtml(item.category || 'General')} &bull; ${escapeHtml(item.unit || 'unit')}
+                        ${item.auto_split ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1.5 px-1 py-0.2" style="font-size: 0.63rem;"><i class="ti ti-arrows-split me-0.5"></i>Overflow Batch</span>' : ''}
                     </div>
                 </td>
                 <td>
+                    ${batchCellHtml}
+                </td>
+                <td>
                     ${containsRemark ? `
-                        <div class="small fw-semibold d-inline-flex align-items-center gap-1.5 px-2 py-1 rounded" style="font-size: 0.76rem; color: #047857; background-color: #ecfdf5; border: 1px solid #a7f3d0; max-width: 100%; word-break: break-word;">
-                            <i class="ti ti-flask flex-shrink-0" style="font-size: 0.85rem;"></i>
+                        <div class="small fw-semibold d-inline-flex align-items-center gap-1.5 px-2 py-0.5 rounded" style="font-size: 0.74rem; color: #047857; background-color: #ecfdf5; border: 1px solid #a7f3d0; max-width: 100%; word-break: break-word;">
+                            <i class="ti ti-flask flex-shrink-0" style="font-size: 0.82rem;"></i>
                             <span>${escapeHtml(containsRemark)}</span>
                         </div>
                     ` : '<span class="text-muted small fst-italic" style="font-size: 0.75rem;">—</span>'}
                 </td>
-                <td>${expiryCellHtml}</td>
+                <td>
+                    ${expiryCellHtml}
+                </td>
+                <td class="text-center">
+                    ${stockCellHtml}
+                </td>
                 <td class="text-end font-monospace text-muted" style="font-size: 0.84rem;">₹${(item.purchase_price || 0).toFixed(2)}</td>
                 <td class="text-end fw-bold text-dark font-monospace" style="font-size: 0.88rem;">₹${item.price.toFixed(2)}</td>
                 <td class="text-center">
-                    <input type="number" id="cart_qty_${idx}" min="1" max="${item.max_stock}" class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input shadow-xs" style="width: 65px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" onkeydown="onCartQtyKeydown(event, ${idx})" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
+                    <input type="number" id="cart_qty_${idx}" min="1" ${totalMedStock > 0 ? `max="${totalMedStock}"` : ''} class="form-control form-control-sm text-center fw-bold px-2 m-auto cart-qty-input shadow-xs" style="width: 72px; min-width: 68px; border-radius: 6px; font-size: 0.88rem;" value="${item.quantity}" oninput="onCartQtyInput(this, ${idx})" onblur="onCartQtyBlur(this, ${idx})" onfocus="this.select()" onkeydown="onCartQtyKeydown(event, ${idx})" aria-label="Quantity for ${escapeHtml(item.medicine_name)}">
                 </td>
                 <td class="text-end fw-bold text-dark font-monospace item-line-total">₹${lineTotal.toFixed(2)}</td>
                 <td class="text-center">
@@ -2872,7 +2918,7 @@ function renderCart() {
     // Add inline quick helper / search indicator row at the bottom of the table
     html += `
         <tr class="table-keyboard-helper-row" style="background-color: #f8fafc; border-top: 1px dashed #cbd5e1;">
-            <td colspan="9" class="py-2.5 px-3">
+            <td colspan="11" class="py-2.5 px-3">
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2 small">
                         <button type="button" class="btn btn-sm btn-outline-success py-1 px-3 rounded-pill d-inline-flex align-items-center gap-1.5 fw-semibold" onclick="const mi=document.getElementById('chargeMedicineInput'); if(mi){mi.focus(); mi.select();}">
@@ -2901,20 +2947,21 @@ function focusCartQty(idx) {
     if (cart.length === 0) return;
     
     if (idx < 0) {
-        const searchInput = document.getElementById('chargeMedicineInput');
-        if (searchInput) {
+        const pInput = document.getElementById('counterPatientSearchInput');
+        if (pInput) {
             document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
-            searchInput.focus();
-            searchInput.select();
+            pInput.focus();
+            pInput.select();
         }
         return;
     }
 
     if (idx >= cart.length) {
-        const proceedBtn = document.getElementById('btnProceedPreview');
-        if (proceedBtn) {
+        const searchInput = document.getElementById('chargeMedicineInput');
+        if (searchInput) {
             document.querySelectorAll('.cart-row').forEach(r => r.classList.remove('active-row-focus'));
-            proceedBtn.focus();
+            searchInput.focus();
+            searchInput.select();
         }
         return;
     }
@@ -2963,6 +3010,10 @@ function onCartQtyKeydown(e, idx) {
     if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 1) val = 1;
+        handleMultiBatchAllocation(idx, val);
+
         // Return to medicine search to add next medicine
         const searchInput = document.getElementById('chargeMedicineInput');
         if (searchInput) {
@@ -2972,8 +3023,12 @@ function onCartQtyKeydown(e, idx) {
         }
         return;
     } else if (e.key === 'Tab') {
-        e.preventDefault();
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val < 1) val = 1;
+        handleMultiBatchAllocation(idx, val);
+
         if (e.shiftKey) {
+            e.preventDefault();
             if (idx > 0) {
                 focusCartQty(idx - 1);
             } else {
@@ -2981,11 +3036,16 @@ function onCartQtyKeydown(e, idx) {
                 if (searchInput) searchInput.focus();
             }
         } else {
-            if (cart.length > 0) {
-                openBillingPreviewModal();
+            e.preventDefault();
+            if (idx < cart.length - 1) {
+                focusCartQty(idx + 1);
             } else {
-                const proceedBtn = document.getElementById('btnProceedPreview');
-                if (proceedBtn) proceedBtn.focus();
+                if (cart.length > 0) {
+                    openBillingPreviewModal();
+                } else {
+                    const proceedBtn = document.getElementById('btnProceedPreview');
+                    if (proceedBtn) proceedBtn.focus();
+                }
             }
         }
     } else if (e.key === 'ArrowUp') {
@@ -2996,11 +3056,10 @@ function onCartQtyKeydown(e, idx) {
         if (idx < cart.length - 1) {
             focusCartQty(idx + 1);
         } else {
-            if (cart.length > 0) {
-                openBillingPreviewModal();
-            } else {
-                const proceedBtn = document.getElementById('btnProceedPreview');
-                if (proceedBtn) proceedBtn.focus();
+            const searchInput = document.getElementById('chargeMedicineInput');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
             }
         }
     } else if (e.key === 'Delete' || (e.key === 'Backspace' && e.ctrlKey)) {
@@ -3039,11 +3098,143 @@ function selectCartBatch(cartIdx, batchId, batchNumber) {
         cart[cartIdx].price = targetBatch.sale_price;
     }
     cart[cartIdx].max_stock = targetBatch.stock > 0 ? targetBatch.stock : 999;
+    delete cart[cartIdx].auto_split;
+
     if (cart[cartIdx].quantity > cart[cartIdx].max_stock) {
-        cart[cartIdx].quantity = cart[cartIdx].max_stock;
-        showAutoAddNotice(`Quantity adjusted to ${cart[cartIdx].max_stock} (Max stock for batch ${targetBatch.batch_number})`, 'warning');
+        handleMultiBatchAllocation(cartIdx, cart[cartIdx].quantity);
     } else {
         showAutoAddNotice(`Switched to Batch ${targetBatch.batch_number} (Exp: ${targetBatch.expiry_date})`, 'success');
+        renderCart();
+    }
+}
+
+function handleMultiBatchAllocation(cartIdx, requestedQty) {
+    if (!cart[cartIdx]) return;
+    const currentItem = cart[cartIdx];
+    const medId = currentItem.medicine_id;
+    const med = catalogMedicines.find(m => m.medicine_id === medId);
+    
+    const batches = (med && Array.isArray(med.batches)) ? med.batches : [];
+    
+    if (batches.length <= 1) {
+        const singleStock = currentItem.max_stock > 0 ? currentItem.max_stock : 999;
+        if (requestedQty > singleStock) {
+            showAutoAddNotice(`Maximum stock for "${currentItem.medicine_name}" is ${singleStock}.`, 'warning');
+            requestedQty = singleStock;
+        }
+        currentItem.quantity = requestedQty;
+        renderCart();
+        return;
+    }
+
+    const totalStock = batches.reduce((sum, b) => sum + (parseInt(b.stock) || 0), 0);
+    if (requestedQty > totalStock) {
+        showAutoAddNotice(`Maximum available stock across all batches for "${currentItem.medicine_name}" is ${totalStock}. Allocated ${totalStock}.`, 'warning');
+        requestedQty = totalStock;
+    }
+
+    // Determine candidate batches to allocate from:
+    // 1. Current batch first (so it empties current batch first if needed)
+    // 2. Remaining active batches sorted by FEFO (earliest expiry first)
+    const currentBatchNum = currentItem.batch_number;
+    const sortedBatches = [];
+    
+    const curB = batches.find(b => b.batch_number === currentBatchNum);
+    if (curB) {
+        sortedBatches.push(curB);
+    }
+    
+    batches.forEach(b => {
+        if (b.batch_number !== currentBatchNum && parseInt(b.stock) > 0) {
+            sortedBatches.push(b);
+        }
+    });
+
+    // Plan allocation across batches
+    let remaining = requestedQty;
+    const allocations = []; // [ { batch, qty } ]
+
+    for (let i = 0; i < sortedBatches.length; i++) {
+        const b = sortedBatches[i];
+        const bStock = parseInt(b.stock) || 0;
+        if (bStock <= 0) continue;
+
+        const alloc = Math.min(remaining, bStock);
+        if (alloc > 0) {
+            allocations.push({ batch: b, qty: alloc });
+            remaining -= alloc;
+        }
+        if (remaining <= 0) break;
+    }
+
+    if (allocations.length === 0) {
+        currentItem.quantity = 1;
+        renderCart();
+        return;
+    }
+
+    // First allocation updates the current row
+    const firstAlloc = allocations[0];
+    currentItem.quantity = firstAlloc.qty;
+    currentItem.batch_id = firstAlloc.batch.batch_id || 0;
+    currentItem.batch_number = firstAlloc.batch.batch_number;
+    currentItem.expiry_date = firstAlloc.batch.expiry_date;
+    currentItem.purchase_price = parseFloat(firstAlloc.batch.purchase_price || 0);
+    if (firstAlloc.batch.sale_price > 0) {
+        currentItem.price = parseFloat(firstAlloc.batch.sale_price);
+    }
+    currentItem.max_stock = parseInt(firstAlloc.batch.stock || 0);
+
+    // Any subsequent allocations:
+    // Update existing overflow rows for this medicine or insert new rows
+    const noticeParts = [`${firstAlloc.qty} from Batch ${firstAlloc.batch.batch_number}`];
+    
+    let insertOffset = 1;
+    for (let k = 1; k < allocations.length; k++) {
+        const alloc = allocations[k];
+        noticeParts.push(`${alloc.qty} from Batch ${alloc.batch.batch_number}`);
+
+        // Check if row already exists for this batch
+        const existingIdx = cart.findIndex(c => c.medicine_id === medId && c.batch_number === alloc.batch.batch_number);
+        if (existingIdx !== -1) {
+            cart[existingIdx].quantity = alloc.qty;
+            cart[existingIdx].max_stock = parseInt(alloc.batch.stock || 0);
+            cart[existingIdx].price = parseFloat(alloc.batch.sale_price || med.price || 0);
+            cart[existingIdx].expiry_date = alloc.batch.expiry_date;
+            cart[existingIdx].auto_split = true;
+        } else {
+            const newRow = {
+                medicine_id: med.medicine_id,
+                medicine_name: med.medicine_name,
+                generic_name: med.generic_name || '',
+                composition: med.composition || '',
+                batch_id: alloc.batch.batch_id || 0,
+                batch_number: alloc.batch.batch_number,
+                expiry_date: alloc.batch.expiry_date,
+                purchase_price: parseFloat(alloc.batch.purchase_price || 0),
+                category: med.category || 'General',
+                unit: med.dosage_form || med.unit || 'unit',
+                quantity: alloc.qty,
+                price: parseFloat(alloc.batch.sale_price || med.price || med.mrp || 0),
+                max_stock: parseInt(alloc.batch.stock || 0),
+                gst_percent: parseFloat(med.gst_percent || 0),
+                auto_split: true
+            };
+            cart.splice(cartIdx + insertOffset, 0, newRow);
+            insertOffset++;
+        }
+    }
+
+    // Clean up any old auto_split rows for this medicine whose batch was not allocated this time
+    const allocatedBatchNums = allocations.map(a => a.batch.batch_number);
+    for (let r = cart.length - 1; r >= 0; r--) {
+        if (cart[r].medicine_id === medId && cart[r].auto_split && !allocatedBatchNums.includes(cart[r].batch_number)) {
+            cart.splice(r, 1);
+        }
+    }
+
+    if (allocations.length > 1) {
+        showAutoAddNotice(`Allocated ${requestedQty} units: ${noticeParts.join(', ')}`, 'success');
     }
 
     renderCart();
@@ -3056,9 +3247,15 @@ function onCartQtyInput(inputElem, idx) {
     }
 
     const currentItem = cart[idx];
-    if (currentItem.max_stock > 0 && val > currentItem.max_stock) {
-        alert(`Maximum available stock for batch ${currentItem.batch_number} is ${currentItem.max_stock}.`);
-        val = currentItem.max_stock;
+    if (!currentItem) return;
+
+    const med = catalogMedicines.find(m => m.medicine_id === currentItem.medicine_id);
+    const totalMedStock = (med && Array.isArray(med.batches) && med.batches.length > 0)
+        ? med.batches.reduce((sum, b) => sum + (parseInt(b.stock) || 0), 0)
+        : (currentItem.max_stock || 999);
+
+    if (totalMedStock > 0 && val > totalMedStock) {
+        val = totalMedStock;
         inputElem.value = val;
     }
 
@@ -3069,6 +3266,34 @@ function onCartQtyInput(inputElem, idx) {
         const lineTotalCell = row.querySelector('.item-line-total');
         if (lineTotalCell) {
             lineTotalCell.textContent = `₹${lineTotal.toFixed(2)}`;
+        }
+
+        const stockDisplay = row.querySelector('.item-stock-display');
+        if (stockDisplay) {
+            const batchStock = parseInt(currentItem.max_stock) || 0;
+            const remaining = Math.max(0, batchStock - val);
+            if (remaining === 0) {
+                stockDisplay.innerHTML = `
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap" style="background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; font-size: 0.72rem; font-weight: 700;">
+                        <i class="ti ti-check me-0.5"></i>0 left &bull; Finished
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">all ${batchStock} allocated</span>
+                `;
+            } else if (remaining <= 5) {
+                stockDisplay.innerHTML = `
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 0.74rem; font-weight: 700;">
+                        <i class="ti ti-alert-triangle me-0.5 text-warning"></i>${remaining} left
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">of ${batchStock} avail</span>
+                `;
+            } else {
+                stockDisplay.innerHTML = `
+                    <span class="badge rounded-pill px-2.5 py-1 font-monospace text-nowrap bg-emerald-subtle text-emerald border border-emerald-subtle" style="font-size: 0.74rem; font-weight: 700;">
+                        ${remaining} left
+                    </span>
+                    <span class="text-muted" style="font-size: 0.66rem; margin-top: 1px;">of ${batchStock} avail</span>
+                `;
+            }
         }
     }
 
@@ -3081,8 +3306,7 @@ function onCartQtyBlur(inputElem, idx) {
         val = 1;
         inputElem.value = 1;
     }
-    cart[idx].quantity = val;
-    recalculateCartTotalsSummary();
+    handleMultiBatchAllocation(idx, val);
 }
 
 function recalculateCartTotalsSummary() {
@@ -3100,7 +3324,10 @@ function recalculateCartTotalsSummary() {
 
     const payload = cart.map(c => ({
         medicine_id: c.medicine_id,
+        batch_id: c.batch_id || 0,
+        batch_number: c.batch_number || '',
         quantity: c.quantity,
+        price: c.price,
         discount_percent: 0.0
     }));
     if (cartJsonInput) cartJsonInput.value = JSON.stringify(payload);
@@ -3250,7 +3477,6 @@ function openBillingPreviewModal() {
                         </div>
                     ` : ''}
                     <div class="text-muted small mt-0.5" style="font-size: 0.72rem;">
-                        ${item.manufacturer ? '<span class="text-emerald fw-semibold">' + escapeHtml(item.manufacturer) + '</span> &bull; ' : ''}
                         <span>${escapeHtml(item.category || 'General')}</span> &bull; 
                         <span class="badge bg-light text-dark border px-1.5 py-0.2">${escapeHtml(item.unit || 'unit')}</span>
                     </div>
@@ -3272,6 +3498,7 @@ function openBillingPreviewModal() {
     listBody.innerHTML = html;
 
     recalcModalTotals();
+    const modalGrandTotal = parseFloat(document.getElementById('modalLblGrandTotal').textContent.replace('₹', '')) || 0;
 
     const patientId = (document.getElementById('hiddenPatientId').value || (document.getElementById('patientSelect') ? document.getElementById('patientSelect').value : '')).trim();
     const isExisting = Boolean(patientId && patientId !== '' && patientId !== '0');
@@ -3318,7 +3545,7 @@ function openBillingPreviewModal() {
         }
         if (tenderedInp) {
             tenderedInp.disabled = false;
-            tenderedInp.value = grandTotal.toFixed(2);
+            tenderedInp.value = modalGrandTotal.toFixed(2);
         }
         if (btnConfirm) {
             btnConfirm.className = 'btn btn-emerald text-white text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-2 shadow-xs';
@@ -3357,7 +3584,7 @@ function openBillingPreviewModal() {
         }
         if (tenderedInp) {
             tenderedInp.disabled = false;
-            tenderedInp.value = grandTotal.toFixed(2);
+            tenderedInp.value = modalGrandTotal.toFixed(2);
         }
         if (btnConfirm) {
             btnConfirm.className = 'btn btn-emerald text-white text-nowrap px-3.5 py-1.5 fw-bold d-inline-flex align-items-center justify-content-center rounded-2 shadow-xs';

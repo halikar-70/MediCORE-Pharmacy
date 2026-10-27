@@ -60,26 +60,78 @@
 })();
 
 document.addEventListener("DOMContentLoaded", function () {
-  const toggle = document.getElementById("sidebarToggle");
-  const sidebar = document.querySelector(".sidebar");
-  if (toggle && sidebar) {
-    toggle.addEventListener("click", () => sidebar.classList.toggle("show"));
+  // Mobile & Tablet Sidebar Drawer Toggling
+  const toggle = document.getElementById("sidebarToggle") || document.getElementById("sidebarToggleBtn");
+  const sidebar = document.querySelector(".sidebar") || document.getElementById("appSidebar");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  const closeBtn = document.getElementById("sidebarCloseBtn");
+
+  function openSidebar() {
+    if (sidebar) sidebar.classList.add("show");
+    if (backdrop) backdrop.classList.add("show");
+    if (window.innerWidth < 992) {
+      document.body.style.overflow = "hidden";
+    }
   }
 
-  if (sidebar) {
-    document.addEventListener("click", function (event) {
-      const clickedInsideSidebar = sidebar.contains(event.target);
-      const clickedToggle = toggle && toggle.contains(event.target);
-      if (
-        window.innerWidth <= 768 &&
-        !clickedInsideSidebar &&
-        !clickedToggle &&
-        sidebar.classList.contains("show")
-      ) {
-        sidebar.classList.remove("show");
+  function closeSidebar() {
+    if (sidebar) sidebar.classList.remove("show");
+    if (backdrop) backdrop.classList.remove("show");
+    document.body.style.overflow = "";
+  }
+
+  if (toggle && sidebar) {
+    toggle.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (sidebar.classList.contains("show")) {
+        closeSidebar();
+      } else {
+        openSidebar();
       }
     });
   }
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSidebar();
+    });
+  }
+
+  if (backdrop) {
+    backdrop.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSidebar();
+    });
+  }
+
+  // Auto-close drawer when clicking a navigation link on mobile (< 992px)
+  if (sidebar) {
+    sidebar.querySelectorAll(".sidebar-submenu .nav-link, a.nav-link").forEach(function (link) {
+      link.addEventListener("click", function () {
+        if (window.innerWidth < 992) {
+          closeSidebar();
+        }
+      });
+    });
+  }
+
+  // Close on Escape key press
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && sidebar && sidebar.classList.contains("show")) {
+      closeSidebar();
+    }
+  });
+
+  // Auto-reset drawer state when resizing to desktop
+  window.addEventListener("resize", function () {
+    if (window.innerWidth >= 992 && sidebar && sidebar.classList.contains("show")) {
+      closeSidebar();
+    }
+  });
 
   // Standardized Toast Notification System
   window.PharmacyToast = {

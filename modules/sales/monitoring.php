@@ -135,16 +135,31 @@ if (!empty($_GET['view_id'])) {
 
 $page_title = 'Sales Registry & Monitoring';
 
+$hide_navbar = true;
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/../../includes/sidebar.php';
 include __DIR__ . '/../../includes/navbar.php';
 ?>
 
 <div class="w-100">
-    <div class="d-flex justify-content-end align-items-center mb-3">
-        <a href="counter.php" class="btn btn-emerald text-white fw-bold shadow-sm">
-            <i class="ti ti-plus me-1"></i>New OPD Sale
-        </a>
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2.5">
+            <button class="btn btn-icon btn-light d-lg-none me-1 flex-shrink-0" id="sidebarToggleBtn" type="button" aria-label="Toggle Navigation Sidebar">
+                <i class="ti ti-menu-2 fs-5"></i>
+            </button>
+            <div class="d-inline-flex align-items-center justify-content-center shadow-xs" style="width: 42px; height: 42px; border-radius: 12px; background-color: #f0fdf4; color: #059669; border: 1px solid #a7f3d0;">
+                <i class="ti ti-chart-line fs-4"></i>
+            </div>
+            <div>
+                <h4 class="fw-bold mb-0 text-dark" style="font-size: 1.25rem; letter-spacing: -0.2px;">Sales Registry &amp; Monitoring</h4>
+                <div class="text-muted small" style="font-size: 0.78rem;">Track, filter, and inspect outpatient and inpatient pharmacy invoices</div>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="counter.php" class="btn btn-emerald text-white fw-bold shadow-sm d-inline-flex align-items-center gap-1.5" style="border-radius: 8px;">
+                <i class="ti ti-plus"></i> New OPD Sale
+            </a>
+        </div>
     </div>
 
     <?php if ($error): ?>
@@ -200,6 +215,7 @@ include __DIR__ . '/../../includes/navbar.php';
                     </label>
                     <select name="payment_status" class="form-select form-select-sm no-search" data-no-search="true">
                         <option value="">All Payment Statuses</option>
+                        <option value="OUTSTANDING" <?= ($paymentStatus === 'OUTSTANDING' || $paymentStatus === 'DUE') ? 'selected' : '' ?>>Outstanding / Due</option>
                         <option value="PAID" <?= $paymentStatus === 'PAID' ? 'selected' : '' ?>>Paid</option>
                         <option value="PARTIALLY_PAID" <?= $paymentStatus === 'PARTIALLY_PAID' ? 'selected' : '' ?>>Partially Paid</option>
                         <option value="UNPAID" <?= $paymentStatus === 'UNPAID' ? 'selected' : '' ?>>Unpaid</option>
@@ -240,10 +256,10 @@ include __DIR__ . '/../../includes/navbar.php';
     <div class="card shadow-sm border-0 rounded-3">
         <div class="card-body p-0">
             <div class="table-responsive" style="max-height: calc(100vh - 240px); overflow-y: auto;">
-                <table class="table table-hover align-middle mb-0" style="min-width: 1140px;">
+                <table class="table table-hover align-middle mb-0" style="min-width: 1290px;">
                     <thead class="table-light small text-muted text-uppercase sticky-top" style="top: 0; z-index: 2; background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.04);">
                         <tr>
-                            <th class="ps-3 text-nowrap" style="width: 140px;">Invoice No</th>
+                            <th class="ps-3 text-nowrap" style="width: 175px; min-width: 170px;">Invoice No</th>
                             <th class="text-nowrap" style="width: 115px;">Date</th>
                             <th class="text-center text-nowrap" style="width: 100px;">Type</th>
                             <th class="text-nowrap" style="width: 220px;">Customer / Patient</th>
@@ -252,7 +268,7 @@ include __DIR__ . '/../../includes/navbar.php';
                             <th class="text-end text-nowrap font-monospace" style="width: 110px;">Due (₹)</th>
                             <th class="text-center text-nowrap" style="width: 120px;">Payment</th>
                             <th class="text-center text-nowrap" style="width: 110px;">Status</th>
-                            <th class="text-end pe-3 text-nowrap" style="width: 130px;">Actions</th>
+                            <th class="text-end pe-3 text-nowrap" style="width: 250px; min-width: 240px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="salesTableBody">
@@ -286,22 +302,27 @@ include __DIR__ . '/../../includes/navbar.php';
                                 $isRefundCompleted = (strpos($s['notes'] ?? '', 'OVERPAYMENT_REFUND_COMPLETED') !== false);
                                 ?>
                                 <tr class="<?= $s['status'] === 'CANCELLED' ? 'table-light text-muted' : '' ?>">
-                                    <td class="ps-3 fw-bold font-monospace text-dark text-nowrap" style="font-size: 0.86rem;">
-                                        <?= htmlspecialchars($s['sale_number']) ?>
-                                        <?php if ($isEditedBill): ?>
-                                            <span class="badge bg-warning text-dark border border-warning-subtle font-monospace ms-1" style="font-size: 0.66rem;">
-                                                <i class="ti ti-history me-0.5"></i>EDITED
-                                            </span>
-                                        <?php endif; ?>
-                                        <?php if ($hasOverpaymentDue): ?>
-                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle font-monospace ms-1" style="font-size: 0.66rem;" title="Customer Overpayment: Refund Due">
-                                                <i class="ti ti-cash-refund me-0.5"></i>REFUND DUE ₹<?= number_format($excessAmount, 2) ?>
-                                            </span>
-                                        <?php elseif ($isRefundCompleted): ?>
-                                            <span class="badge bg-info-subtle text-info border border-info-subtle font-monospace ms-1" style="font-size: 0.66rem;" title="Overpayment Refund Settled">
-                                                <i class="ti ti-check me-0.5"></i>REFUNDED
-                                            </span>
-                                        <?php endif; ?>
+                                    <td class="ps-3 text-nowrap">
+                                        <div class="d-flex align-items-center flex-wrap gap-1">
+                                            <a href="counter.php?print_id=<?= $s['sale_id'] ?>" target="_blank" class="fw-bold font-monospace text-dark text-decoration-none d-inline-flex align-items-center gap-1 hover-primary" style="font-size: 0.86rem;" title="View &amp; Print Receipt #<?= htmlspecialchars($s['sale_number']) ?>">
+                                                <i class="ti ti-file-invoice text-primary opacity-75" style="font-size: 0.95rem;"></i>
+                                                <span><?= htmlspecialchars($s['sale_number']) ?></span>
+                                            </a>
+                                            <?php if ($isEditedBill): ?>
+                                                <span class="badge bg-warning text-dark border border-warning-subtle font-monospace" style="font-size: 0.64rem;">
+                                                    <i class="ti ti-history me-0.5"></i>EDITED
+                                                </span>
+                                            <?php endif; ?>
+                                            <?php if ($hasOverpaymentDue): ?>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle font-monospace" style="font-size: 0.64rem;" title="Customer Overpayment: Refund Due">
+                                                    <i class="ti ti-cash-refund me-0.5"></i>REFUND DUE
+                                                </span>
+                                            <?php elseif ($isRefundCompleted): ?>
+                                                <span class="badge bg-info-subtle text-info border border-info-subtle font-monospace" style="font-size: 0.64rem;" title="Overpayment Refund Settled">
+                                                    <i class="ti ti-check me-0.5"></i>REFUNDED
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
                                     </td>
                                     <td class="text-nowrap text-dark small" style="font-size: 0.84rem;"><?= date('d-M-Y', strtotime($s['sale_date'])) ?></td>
                                     <td class="text-center text-nowrap"><?= $typeBadge ?></td>
@@ -313,7 +334,7 @@ include __DIR__ . '/../../includes/navbar.php';
                                     </td>
                                     <td class="text-end fw-bold text-dark text-nowrap font-monospace" style="font-size: 0.88rem;">₹<?= number_format($s['grand_total'], 2) ?></td>
                                     <td class="text-end fw-bold text-success text-nowrap font-monospace" style="font-size: 0.88rem;">₹<?= number_format($s['paid_amount'], 2) ?></td>
-                                    <td class="text-end fw-bold text-nowrap font-monospace <?= $isDue ? 'text-danger' : ($hasOverpaymentDue ? 'text-warning-emphasis' : 'text-muted') ?>" style="font-size: 0.88rem;">
+                                    <td class="text-end fw-bold text-nowrap font-monospace" style="font-size: 0.88rem; <?= $isDue ? 'color: #800000 !important;' : ($hasOverpaymentDue ? 'color: #c2410c;' : 'color: #64748b;') ?>">
                                         <?php if ($hasOverpaymentDue): ?>
                                             <span class="text-warning-emphasis" title="Refund Due">Excess ₹<?= number_format($excessAmount, 2) ?></span>
                                         <?php else: ?>
@@ -326,42 +347,69 @@ include __DIR__ . '/../../includes/navbar.php';
                                     <td class="text-center text-nowrap">
                                         <?php if ($s['status'] === 'CANCELLED'): ?>
                                             <span class="badge bg-danger-subtle text-danger border border-danger-subtle font-monospace px-2 py-1" style="font-size: 0.72rem;">CANCELLED</span>
+                                        <?php elseif ($isDue): ?>
+                                            <span class="badge badge-maroon font-monospace px-2 py-1" style="font-size: 0.72rem; background: linear-gradient(135deg, #881337 0%, #800000 100%); color: #ffffff; border: 1px solid #5c071e;" title="Payment Outstanding (Due ₹<?= number_format($s['balance_amount'], 2) ?>)">
+                                                <i class="ti ti-clock-pause me-0.5"></i>OUTSTANDING
+                                            </span>
+                                        <?php elseif ($hasOverpaymentDue): ?>
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle font-monospace px-2 py-1" style="font-size: 0.72rem;" title="Customer Overpayment Refund Due">
+                                                <i class="ti ti-cash-refund me-0.5"></i>REFUND DUE
+                                            </span>
                                         <?php else: ?>
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle font-monospace px-2 py-1" style="font-size: 0.72rem;">COMPLETED</span>
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle font-monospace px-2 py-1" style="font-size: 0.72rem;">
+                                                <i class="ti ti-check me-0.5"></i>COMPLETED
+                                            </span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end pe-3 text-nowrap">
-                                        <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                                        <div class="d-inline-flex align-items-center justify-content-end flex-nowrap" style="gap: 6px;">
                                             <?php 
                                                 $editUrl = ($s['sale_type'] === 'IPD_SALE') ? 'regular.php?edit_sale_id=' . $s['sale_id'] : 'counter.php?edit_sale_id=' . $s['sale_id'];
                                                 if ($s['status'] === 'CANCELLED') {
                                                     $editUrl = 'invoice.php?id=' . $s['sale_id'];
                                                 }
                                             ?>
-                                            <a href="<?= $editUrl ?>" class="btn btn-sm btn-outline-primary p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center;" title="<?= $s['status'] === 'CANCELLED' ? 'View Bill' : 'View & Edit Bill' ?>">
+                                            <!-- Yellow Edit Button with Icon and Name -->
+                                            <a href="<?= $editUrl ?>" class="btn-action-pill btn-action-edit" title="<?= $s['status'] === 'CANCELLED' ? 'View Bill' : 'Edit Bill' ?>">
                                                 <i class="ti ti-edit"></i>
+                                                <span><?= $s['status'] === 'CANCELLED' ? 'View' : 'Edit' ?></span>
                                             </a>
+
+                                            <!-- Return Button with Icon and Name -->
                                             <?php if ($s['status'] !== 'CANCELLED' && has_permission('pharmacy.sales_returns.create')): ?>
-                                                <a href="returns.php?sale_id=<?= $s['sale_id'] ?>" class="btn btn-sm btn-outline-warning p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center; color: #d97706; border-color: #fde68a;" title="Return Medicines / Create Return Bill">
+                                                <a href="returns.php?sale_id=<?= $s['sale_id'] ?>" class="btn-action-pill btn-action-return" title="Return Medicines">
                                                     <i class="ti ti-arrow-back-up"></i>
+                                                    <span>Return</span>
                                                 </a>
                                             <?php endif; ?>
-                                            <a href="counter.php?print_id=<?= $s['sale_id'] ?>" target="_blank" class="btn btn-sm btn-light border p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center;" title="Reprint Receipt">
+
+                                            <!-- Print Button with Icon and Name -->
+                                            <a href="counter.php?print_id=<?= $s['sale_id'] ?>" target="_blank" class="btn-action-pill btn-action-print" title="Print Receipt">
                                                 <i class="ti ti-printer"></i>
+                                                <span>Print</span>
                                             </a>
+
+                                            <!-- Pay Button with Icon and Name (When Balance Due) -->
                                             <?php if ($s['status'] !== 'CANCELLED' && $isDue): ?>
-                                                <button type="button" class="btn btn-sm btn-outline-success p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center;" title="Add Payment" onclick="openPaymentModal(<?= $s['sale_id'] ?>, '<?= $s['sale_number'] ?>', <?= $s['balance_amount'] ?>)">
+                                                <button type="button" class="btn-action-pill btn-action-pay" title="Add Payment" onclick="openPaymentModal(<?= $s['sale_id'] ?>, '<?= htmlspecialchars($s['sale_number'], ENT_QUOTES) ?>', <?= (float)$s['balance_amount'] ?>)">
                                                     <i class="ti ti-cash"></i>
+                                                    <span>Pay</span>
                                                 </button>
                                             <?php endif; ?>
+
+                                            <!-- Refund Button with Icon and Name (When Excess Overpayment Due) -->
                                             <?php if ($s['status'] !== 'CANCELLED' && $hasOverpaymentDue && (has_permission('pharmacy.sales.edit') || has_permission('pharmacy.sales.create'))): ?>
-                                                <button type="button" class="btn btn-sm btn-outline-warning p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center; color: #b45309; border-color: #fde68a;" title="Settle Overpayment Refund (₹<?= number_format($excessAmount, 2) ?>)" onclick="openRefundModal(<?= $s['sale_id'] ?>, '<?= $s['sale_number'] ?>', <?= $excessAmount ?>)">
+                                                <button type="button" class="btn-action-pill btn-action-refund" title="Settle Refund (₹<?= number_format($excessAmount, 2) ?>)" onclick="openRefundModal(<?= $s['sale_id'] ?>, '<?= htmlspecialchars($s['sale_number'], ENT_QUOTES) ?>', <?= (float)$excessAmount ?>)">
                                                     <i class="ti ti-cash-refund"></i>
+                                                    <span>Refund</span>
                                                 </button>
                                             <?php endif; ?>
+
+                                            <!-- Cancel Button with Icon and Name -->
                                             <?php if ($s['status'] !== 'CANCELLED' && has_permission('pharmacy.sales.cancel')): ?>
-                                                <button type="button" class="btn btn-sm btn-outline-danger p-1" style="width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center;" title="Cancel Sale" onclick="openCancelModal(<?= $s['sale_id'] ?>, '<?= $s['sale_number'] ?>')">
+                                                <button type="button" class="btn-action-pill btn-action-cancel" title="Cancel Sale" onclick="openCancelModal(<?= $s['sale_id'] ?>, '<?= htmlspecialchars($s['sale_number'], ENT_QUOTES) ?>')">
                                                     <i class="ti ti-x"></i>
+                                                    <span>Cancel</span>
                                                 </button>
                                             <?php endif; ?>
                                         </div>
@@ -491,24 +539,30 @@ include __DIR__ . '/../../includes/navbar.php';
 
 <!-- Modal: Add Payment -->
 <div class="modal fade" id="addPaymentModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
             <form method="POST">
                 <input type="hidden" name="action" value="add_payment">
                 <input type="hidden" name="sale_id" id="paySaleId" value="">
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
-                <div class="modal-header bg-light">
-                    <h6 class="modal-title fw-bold text-dark"><i class="ti ti-cash me-1 text-emerald"></i>Record Payment Voucher</h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-header bg-emerald text-white px-4 py-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="ti ti-cash fs-5"></i>
+                        <h6 class="modal-title fw-bold text-white mb-0">Record Payment Voucher</h6>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body p-3">
-                    <div class="alert alert-info py-2 small">
-                        Recording payment for Invoice: <strong id="paySaleNumber"></strong><br>
-                        Remaining Due Balance: <strong id="payDueBalance"></strong>
+                <div class="modal-body p-4 bg-white">
+                    <div class="alert alert-info border border-info-subtle rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background-color: #eff6ff;">
+                        <i class="ti ti-receipt text-primary fs-4 flex-shrink-0 mt-0.5"></i>
+                        <div class="text-dark" style="font-size: 0.84rem; line-height: 1.5; min-width: 0;">
+                            <div>Recording payment for Invoice: <strong id="paySaleNumber" class="font-monospace text-dark bg-white px-1.5 py-0.5 rounded border border-info-subtle"></strong></div>
+                            <div class="mt-1 text-muted">Remaining Due Balance: <strong id="payDueBalance" class="text-danger font-monospace"></strong></div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Amount to Pay (₹) *</label>
-                        <input type="number" step="any" min="0.01" name="amount" id="payAmountInput" class="form-control form-control-sm text-end fw-bold fs-6" placeholder="0.00" onfocus="this.select()" required>
+                        <input type="number" step="any" min="0.01" name="amount" id="payAmountInput" class="form-control text-end fw-bold fs-6 font-monospace" placeholder="0.00" onfocus="this.select()" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Payment Mode *</label>
@@ -519,14 +573,14 @@ include __DIR__ . '/../../includes/navbar.php';
                             <option value="BANK_TRANSFER">Bank Transfer</option>
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-2">
                         <label class="form-label small">Reference / UTR Number</label>
                         <input type="text" name="reference_number" class="form-control form-control-sm" placeholder="Optional transaction ID">
                     </div>
                 </div>
-                <div class="modal-footer py-2">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-sm btn-success fw-bold">Post Payment</button>
+                <div class="modal-footer px-4 py-2.5 bg-light border-top d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-light border px-3 py-1.5 rounded-3 text-secondary fw-semibold" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-emerald text-white fw-bold px-3 py-1.5 rounded-3 shadow-xs">Post Payment</button>
                 </div>
             </form>
         </div>
@@ -535,24 +589,30 @@ include __DIR__ . '/../../includes/navbar.php';
 
 <!-- Modal: Settle Overpayment Refund -->
 <div class="modal fade" id="settleRefundModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
             <form method="POST">
                 <input type="hidden" name="action" value="settle_overpayment_refund">
                 <input type="hidden" name="sale_id" id="refundSaleId" value="">
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
-                <div class="modal-header bg-warning-subtle border-bottom py-2.5 px-3">
-                    <h6 class="modal-title fw-bold text-dark mb-0"><i class="ti ti-cash-refund me-1 text-warning-emphasis"></i>Settle Customer Overpayment Refund</h6>
+                <div class="modal-header bg-warning-subtle border-bottom px-4 py-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="ti ti-cash-refund fs-5 text-warning-emphasis"></i>
+                        <h6 class="modal-title fw-bold text-dark mb-0">Settle Customer Overpayment Refund</h6>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body p-3">
-                    <div class="alert alert-warning py-2 small border shadow-xs">
-                        Issuing refund for Invoice: <strong id="refundSaleNumber" class="font-monospace"></strong><br>
-                        Maximum Outstanding Excess: <strong id="refundExcessMax" class="font-monospace text-warning-emphasis"></strong>
+                <div class="modal-body p-4 bg-white">
+                    <div class="alert alert-warning border border-warning-subtle rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background-color: #fffbeb;">
+                        <i class="ti ti-cash-refund text-warning fs-4 flex-shrink-0 mt-0.5"></i>
+                        <div class="text-dark" style="font-size: 0.84rem; line-height: 1.5; min-width: 0;">
+                            <div>Issuing refund for Invoice: <strong id="refundSaleNumber" class="font-monospace text-dark bg-white px-1.5 py-0.5 rounded border border-warning-subtle"></strong></div>
+                            <div class="mt-1 text-muted">Maximum Outstanding Excess: <strong id="refundExcessMax" class="font-monospace text-warning-emphasis"></strong></div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Refund Amount (₹) *</label>
-                        <input type="number" step="any" min="0.01" name="amount" id="refundAmountInput" class="form-control form-control-sm text-end fw-bold fs-6 font-monospace" placeholder="0.00" onfocus="this.select()" required>
+                        <input type="number" step="any" min="0.01" name="amount" id="refundAmountInput" class="form-control text-end fw-bold fs-6 font-monospace" placeholder="0.00" onfocus="this.select()" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Refund Payment Mode *</label>
@@ -568,13 +628,13 @@ include __DIR__ . '/../../includes/navbar.php';
                         <label class="form-label small">Reference / Refund Receipt / UTR</label>
                         <input type="text" name="reference_number" class="form-control form-control-sm" placeholder="Optional transaction ID">
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-2">
                         <label class="form-label small">Notes / Audit Memo</label>
                         <input type="text" name="notes" class="form-control form-control-sm" placeholder="e.g. Overpayment refund for invoice edit">
                     </div>
                 </div>
-                <div class="modal-footer py-2">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <div class="modal-footer px-4 py-2.5 bg-light border-top d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-light border px-3 py-1.5 rounded-3 text-secondary fw-semibold" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-sm btn-warning fw-bold text-dark shadow-xs"><i class="ti ti-cash-refund me-1"></i>Confirm &amp; Settle Refund</button>
                 </div>
             </form>
@@ -583,29 +643,45 @@ include __DIR__ . '/../../includes/navbar.php';
 </div>
 
 <!-- Modal: Cancel Sale -->
-<div class="modal fade" id="cancelSaleModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
+<div class="modal fade" id="cancelSaleModal" tabindex="-1" aria-labelledby="cancelSaleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
             <form method="POST">
                 <input type="hidden" name="action" value="cancel_sale">
                 <input type="hidden" name="sale_id" id="cancelSaleId" value="">
                 <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
-                <div class="modal-header bg-danger text-white">
-                    <h6 class="modal-title fw-bold"><i class="ti ti-alert-triangle me-1"></i>Cancel Sale Transaction</h6>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body p-3">
-                    <div class="alert alert-warning py-2 small">
-                        <strong>Warning:</strong> Cancelling sale <strong id="cancelSaleNumber"></strong> will write compensating <code>SALE_RETURN</code> stock movements back into inventory and mark invoice CANCELLED.
+                
+                <div class="modal-header px-4 py-3" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="ti ti-alert-triangle fs-5"></i>
+                        <h6 class="modal-title fw-bold text-white mb-0" id="cancelSaleModalLabel">Cancel Sale Transaction</h6>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Reason for Cancellation *</label>
-                        <textarea name="cancellation_reason" class="form-control form-control-sm" rows="3" required placeholder="State why this transaction is being reversed..."></textarea>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body p-4 bg-white">
+                    <div class="alert alert-warning border border-warning-subtle rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background-color: #fffbeb;">
+                        <i class="ti ti-alert-triangle text-warning fs-4 flex-shrink-0 mt-0.5"></i>
+                        <div class="text-dark" style="font-size: 0.84rem; line-height: 1.5; min-width: 0;">
+                            <strong>Warning:</strong> Cancelling sale <strong id="cancelSaleNumber" class="font-monospace text-dark bg-white px-1.5 py-0.5 rounded border border-warning-subtle shadow-2xs"></strong> will write compensating <span class="badge bg-danger-subtle text-danger border border-danger-subtle font-monospace px-1.5 py-0.5" style="font-size: 0.72rem;">SALE_RETURN</span> stock movements back into inventory and mark invoice <span class="badge bg-secondary-subtle text-dark border font-monospace px-1.5 py-0.5" style="font-size: 0.72rem;">CANCELLED</span>.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-1">
+                        <label class="form-label small fw-bold text-dark mb-1.5">
+                            Reason for Cancellation <span class="text-danger">*</span>
+                        </label>
+                        <textarea name="cancellation_reason" class="form-control rounded-3" rows="3" required placeholder="State why this transaction is being reversed..." style="font-size: 0.84rem; resize: vertical; min-height: 85px;"></textarea>
                     </div>
                 </div>
-                <div class="modal-footer py-2">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Keep Sale</button>
-                    <button type="submit" class="btn btn-sm btn-danger fw-bold">Confirm & Reverse Stock</button>
+                
+                <div class="modal-footer px-4 py-2.5 bg-light border-top d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-light border px-3 py-1.5 rounded-3 text-secondary fw-semibold" data-bs-dismiss="modal">
+                        Keep Sale
+                    </button>
+                    <button type="submit" class="btn btn-sm btn-danger fw-bold px-3 py-1.5 rounded-3 shadow-xs d-inline-flex align-items-center gap-1.5">
+                        Confirm &amp; Reverse Stock
+                    </button>
                 </div>
             </form>
         </div>

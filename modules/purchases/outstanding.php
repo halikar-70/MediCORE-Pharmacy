@@ -161,7 +161,7 @@ include __DIR__ . '/../../includes/navbar.php';
                         <option value="">All Creditor Suppliers</option>
                         <?php foreach ($suppliersList as $sup): ?>
                             <option value="<?= $sup['supplier_id'] ?>" <?= $supplierId === (int)$sup['supplier_id'] ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($sup['supplier_name']) ?> (<?= htmlspecialchars($sup['supplier_code']) ?>)
+                                <?= htmlspecialchars($sup['supplier_name'] ?? '') ?><?= !empty($sup['supplier_code']) ? ' (' . htmlspecialchars($sup['supplier_code']) . ')' : '' ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -206,11 +206,13 @@ include __DIR__ . '/../../includes/navbar.php';
                         <?php foreach ($agingItems as $it): ?>
                             <tr>
                                 <td class="ps-4">
-                                    <div class="fw-bold text-dark"><?= htmlspecialchars($it['supplier_name']) ?></div>
-                                    <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($it['supplier_code']) ?></span>
+                                    <div class="fw-bold text-dark"><?= htmlspecialchars($it['supplier_name'] ?? '') ?></div>
+                                    <?php if (!empty($it['supplier_code'])): ?>
+                                        <span class="badge bg-light text-secondary font-monospace" style="font-size: 0.7rem;"><?= htmlspecialchars($it['supplier_code']) ?></span>
+                                    <?php endif; ?>
                                 </td>
-                                <td class="font-monospace fw-semibold text-dark"><?= htmlspecialchars($it['invoice_number']) ?></td>
-                                <td class="font-monospace text-dark"><?= htmlspecialchars($it['supplier_invoice_no']) ?></td>
+                                <td class="font-monospace fw-semibold text-dark"><?= htmlspecialchars($it['invoice_number'] ?? '') ?></td>
+                                <td class="font-monospace text-dark"><?= htmlspecialchars($it['supplier_invoice_no'] ?? '') ?></td>
                                 <td class="small"><?= date('d-M-Y', strtotime($it['invoice_date'])) ?></td>
                                 <td class="small fw-semibold <?= (int)$it['days_overdue'] > 0 ? 'text-danger' : 'text-dark' ?>">
                                     <?= date('d-M-Y', strtotime($it['due_date'])) ?>
